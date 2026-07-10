@@ -30,7 +30,7 @@ export function AuthLayout({ title, subtitle, children, footer }: Props) {
       <div className="relative z-10 min-h-screen w-full flex flex-col lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
         <HeroPanel />
 
-        <main className="relative flex items-center justify-center px-5 sm:px-8 py-10 lg:py-14 overflow-hidden">
+        <main className="relative flex flex-1 items-center justify-center px-5 sm:px-8 py-10 lg:py-14 overflow-hidden">
           {/* Stage lighting for the form — soft colored orbs in three corners
            * and a faint dot grid that gives the empty space some texture. */}
           <div aria-hidden className="pointer-events-none absolute inset-0">

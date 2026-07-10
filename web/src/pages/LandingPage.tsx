@@ -442,44 +442,79 @@ function Hero({ onWatchDemo }: { onWatchDemo: () => void }) {
 
 // The hero showpiece: a meeting intelligence pipeline of glass cards connected
 // by animated gradient lines, with floating chips and mouse parallax.
+// Native design size of the collage; the mobile/tablet copy is uniformly scaled
+// down to whatever column width is available.
+const HERO_COLLAGE_W = 620;
+const HERO_COLLAGE_H = 570.4; // 620 * 4.6/5
+
 function HeroPipeline() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    // Scale the fixed-size collage to exactly fill the available width (never
+    // upscaling past 1×). A pure ratio → the floating cards keep their relative
+    // positions and can't overlap, so the desktop look survives at every size.
+    const ro = new ResizeObserver(() => setScale(Math.min(1, el.clientWidth / HERO_COLLAGE_W)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div className="relative w-full">
-      {/* Mobile / tablet (< lg): a clean vertical stack of the same cards — no
-          absolute positioning, so nothing can overlap at any width. */}
-      <div className="mx-auto grid w-full max-w-md gap-3 lg:hidden">
-        <HeroMeetingCard />
-        <div className="grid grid-cols-2 gap-3">
-          <HeroSpeakerChip />
-          <HeroSentimentChip />
-          <HeroActionItemsChip />
-          <HeroReportChip />
+      {/* Below lg: the SAME floating collage, uniformly scaled to fit — keeps the
+          premium desktop look (full-size on tablets, a crisp mini-collage on
+          phones) with no overlap. The wrapper's aspect ratio reserves exactly
+          the scaled height. */}
+      <div
+        ref={wrapRef}
+        className="relative mx-auto w-full max-w-[620px] lg:hidden"
+        style={{ aspectRatio: "5 / 4.6" }}
+      >
+        <div
+          className="absolute left-0 top-0"
+          style={{ width: HERO_COLLAGE_W, height: HERO_COLLAGE_H, transformOrigin: "top left", transform: `scale(${scale})` }}
+        >
+          <HeroCollage />
         </div>
       </div>
 
-      {/* Desktop (lg+): the floating collage with animated connectors + parallax. */}
+      {/* lg+: the original collage, unscaled — desktop look unchanged. */}
       <div className="relative mx-auto hidden aspect-[5/4.6] w-full max-w-[620px] lg:block">
-        {/* animated connectors */}
-        <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="gv-line" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#06B6D4" />
-              <stop offset="50%" stopColor="#22D3EE" />
-              <stop offset="100%" stopColor="#0E7490" />
-            </linearGradient>
-          </defs>
-          {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
-            <path key={i} d={d} stroke="url(#gv-line)" strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
-          ))}
-        </svg>
-
-        <Floating depth={18} className="left-[11%] top-[24%] w-[78%]"><HeroMeetingCard /></Floating>
-        <Floating depth={40} delay={0.6} className="left-[2%] top-[8%]"><HeroSpeakerChip /></Floating>
-        <Floating depth={52} delay={1.1} duration={8} className="right-[0%] top-[26%]"><HeroSentimentChip /></Floating>
-        <Floating depth={44} delay={1.6} className="bottom-[6%] left-[2%]"><HeroActionItemsChip /></Floating>
-        <Floating depth={34} delay={0.9} duration={7.5} className="bottom-[8%] right-[2%]"><HeroReportChip /></Floating>
+        <HeroCollage />
       </div>
     </div>
+  );
+}
+
+// The floating meeting-intelligence collage: animated gradient connectors +
+// parallax glass cards. Rendered at its native 620px design size and either
+// shown 1:1 (desktop) or scaled to fit (mobile/tablet) by HeroPipeline.
+function HeroCollage() {
+  return (
+    <>
+      {/* animated connectors */}
+      <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="gv-line" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#06B6D4" />
+            <stop offset="50%" stopColor="#22D3EE" />
+            <stop offset="100%" stopColor="#0E7490" />
+          </linearGradient>
+        </defs>
+        {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
+          <path key={i} d={d} stroke="url(#gv-line)" strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
+        ))}
+      </svg>
+
+      <Floating depth={18} className="left-[11%] top-[24%] w-[78%]"><HeroMeetingCard /></Floating>
+      <Floating depth={40} delay={0.6} className="left-[2%] top-[8%]"><HeroSpeakerChip /></Floating>
+      <Floating depth={52} delay={1.1} duration={8} className="right-[0%] top-[26%]"><HeroSentimentChip /></Floating>
+      <Floating depth={44} delay={1.6} className="bottom-[6%] left-[2%]"><HeroActionItemsChip /></Floating>
+      <Floating depth={34} delay={0.9} duration={7.5} className="bottom-[8%] right-[2%]"><HeroReportChip /></Floating>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Link, useNavigate } from "react-router-dom";
+import { NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import clsx from "clsx";
 import { Icon } from "../Icon";
 import { BrandLogo } from "../BrandLogo";
@@ -19,6 +19,11 @@ const items = [
 ];
 
 export function MobileNav({ onOpenPalette }: Props) {
+  const location = useLocation();
+  const activeIndex = items.findIndex(
+    (it) => location.pathname === it.to || location.pathname.startsWith(it.to + "/")
+  );
+
   return (
     <>
       <header className="lg:hidden sticky top-0 z-30 bg-overlay backdrop-blur-md border-b border-line">
@@ -49,7 +54,18 @@ export function MobileNav({ onOpenPalette }: Props) {
         className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-surface-overlay backdrop-blur-md border-t border-line"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 6px)" }}
       >
-        <ul className="grid grid-cols-4">
+        <ul className="relative grid grid-cols-4">
+          {/* One shared indicator that slides to the active tab, instead of a
+           * separate bar per tab — so switching tabs animates across. */}
+          {activeIndex >= 0 && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-0 left-0 h-[2px] w-1/4 transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none"
+              style={{ transform: `translateX(${activeIndex * 100}%)` }}
+            >
+              <span className="mx-auto block h-full w-8 rounded-b-full bg-brand-500" />
+            </span>
+          )}
           {items.map(({ to, label, icon: ItemIcon }) => (
             <li key={to}>
               <NavLink
@@ -57,25 +73,23 @@ export function MobileNav({ onOpenPalette }: Props) {
                 className={({ isActive }) =>
                   clsx(
                     "relative flex flex-col items-center justify-center gap-0.5 h-14 transition-colors focus-ring",
+                    "active:scale-[0.94] transition-transform duration-150 motion-reduce:transition-none",
                     isActive ? "text-ink" : "text-inkMute"
                   )
                 }
               >
                 {({ isActive }) => (
                   <>
-                    {isActive && (
-                      <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-b-full bg-brand-500" />
-                    )}
                     <ItemIcon
                       size={19}
                       className={clsx(
-                        "transition-transform",
-                        isActive ? "text-brand-500 dark:text-brand-400 -translate-y-px scale-105" : ""
+                        "transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none",
+                        isActive ? "text-brand-500 dark:text-brand-400 -translate-y-px scale-110" : ""
                       )}
                     />
                     <span
                       className={clsx(
-                        "text-[10px] leading-none tracking-tight",
+                        "text-[10px] leading-none tracking-tight transition-colors",
                         isActive ? "font-semibold text-brand-500 dark:text-brand-400" : "font-medium"
                       )}
                     >

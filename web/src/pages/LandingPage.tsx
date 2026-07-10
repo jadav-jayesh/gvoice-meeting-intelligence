@@ -403,7 +403,7 @@ function Hero({ onWatchDemo }: { onWatchDemo: () => void }) {
       <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.02fr_1.05fr]">
         <div className="gv-stagger relative z-10 max-w-xl">
           <Eyebrow>AI Meeting Operating System</Eyebrow>
-          <h1 className="mt-6 text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[68px]">
+          <h1 className="mt-6 text-[clamp(34px,9vw,44px)] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[68px]">
             Meetings End.
             <br />
             <span className="gv-grad-text">Execution Begins.</span>
@@ -444,88 +444,116 @@ function Hero({ onWatchDemo }: { onWatchDemo: () => void }) {
 // by animated gradient lines, with floating chips and mouse parallax.
 function HeroPipeline() {
   return (
-    <div className="relative mx-auto aspect-[5/4.6] w-full max-w-[620px]">
-      {/* animated connectors */}
-      <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="gv-line" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#06B6D4" />
-            <stop offset="50%" stopColor="#22D3EE" />
-            <stop offset="100%" stopColor="#0E7490" />
-          </linearGradient>
-        </defs>
-        {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
-          <path key={i} d={d} stroke="url(#gv-line)" strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
-        ))}
-      </svg>
+    <div className="relative w-full">
+      {/* Mobile / tablet (< lg): a clean vertical stack of the same cards — no
+          absolute positioning, so nothing can overlap at any width. */}
+      <div className="mx-auto grid w-full max-w-md gap-3 lg:hidden">
+        <HeroMeetingCard />
+        <div className="grid grid-cols-2 gap-3">
+          <HeroSpeakerChip />
+          <HeroSentimentChip />
+          <HeroActionItemsChip />
+          <HeroReportChip />
+        </div>
+      </div>
 
-      {/* central node — live meeting card */}
-      <Floating depth={18} className="left-[11%] top-[24%] w-[78%]">
-        <Glass ring className="gv-glow p-4">
-          <div className="flex items-center gap-2 border-b border-[rgb(var(--gv-fg)_/_0.1)] pb-3">
-            <span className="grid h-7 w-7 place-items-center rounded-md gv-grad text-white"><Icon.Video size={14} /></span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12.5px] font-semibold">Q3 Roadmap Sync</p>
-              <p className="text-[10.5px] text-[rgb(var(--gv-fg)_/_0.45)]">Google Meet · live</p>
-            </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#06B6D4]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--gv-accent)]">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#06B6D4]" /> REC
-            </span>
-          </div>
-          <div className="mt-3 space-y-2.5">
-            <HeroLine initials="MR" name="Maya R." text="Let's lock the launch for September 14." tone="from-[#06B6D4] to-[#22D3EE]" />
-            <HeroLine initials="JK" name="Jordan K." text="Engineering can open the beta gate Thursday." tone="from-[#0E7490] to-[#0E7490]" />
-            <HeroLine ai initials="AI" name="gVoice" text="Decision detected · 2 action items captured" tone="from-[#06B6D4] to-[#0E7490]" />
-          </div>
-        </Glass>
-      </Floating>
-
-      {/* top: speaker recognition */}
-      <Floating depth={40} delay={0.6} className="left-[2%] top-[8%]">
-        <Glass className="flex items-center gap-2.5 px-3.5 py-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#06B6D4]/15 text-[var(--gv-accent)]"><Icon.Users size={15} /></span>
-          <div>
-            <p className="text-[11.5px] font-semibold leading-tight">Speaker identified</p>
-            <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Maya R. · 98% match</p>
-          </div>
-        </Glass>
-      </Floating>
-
-      {/* right: sentiment */}
-      <Floating depth={52} delay={1.1} duration={8} className="right-[0%] top-[26%]">
-        <Glass className="flex items-center gap-3 px-3.5 py-2.5">
-          <svg width="30" height="30" viewBox="0 0 36 36" className="-rotate-90">
-            <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
-            <circle cx="18" cy="18" r="15" fill="none" stroke="#06B6D4" strokeWidth="3" strokeLinecap="round" strokeDasharray="94" strokeDashoffset="9" />
-          </svg>
-          <div>
-            <p className="text-[12.5px] font-semibold leading-tight">92%</p>
-            <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Positive</p>
-          </div>
-        </Glass>
-      </Floating>
-
-      {/* bottom-left: action items */}
-      <Floating depth={44} delay={1.6} className="bottom-[6%] left-[2%]">
-        <Glass className="px-3.5 py-3">
-          <p className="mb-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--gv-fg)_/_0.4)]"><Icon.CheckCircle size={11} className="text-[var(--gv-accent)]" /> Action items</p>
-          {["Ship brief — Maya", "Open beta gate — Jordan"].map((t) => (
-            <p key={t} className="flex items-center gap-1.5 text-[11px] text-[rgb(var(--gv-fg)_/_0.75)]"><Icon.Check size={10} className="text-[var(--gv-accent)]" /> {t}</p>
+      {/* Desktop (lg+): the floating collage with animated connectors + parallax. */}
+      <div className="relative mx-auto hidden aspect-[5/4.6] w-full max-w-[620px] lg:block">
+        {/* animated connectors */}
+        <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="gv-line" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#06B6D4" />
+              <stop offset="50%" stopColor="#22D3EE" />
+              <stop offset="100%" stopColor="#0E7490" />
+            </linearGradient>
+          </defs>
+          {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
+            <path key={i} d={d} stroke="url(#gv-line)" strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
           ))}
-        </Glass>
-      </Floating>
+        </svg>
 
-      {/* bottom-right: report ready */}
-      <Floating depth={34} delay={0.9} duration={7.5} className="bottom-[8%] right-[2%]">
-        <Glass className="flex items-center gap-2.5 px-3.5 py-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg gv-grad text-white"><Icon.Download size={14} /></span>
-          <div>
-            <p className="text-[11.5px] font-semibold leading-tight">Report ready</p>
-            <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">in 1m 48s</p>
-          </div>
-        </Glass>
-      </Floating>
+        <Floating depth={18} className="left-[11%] top-[24%] w-[78%]"><HeroMeetingCard /></Floating>
+        <Floating depth={40} delay={0.6} className="left-[2%] top-[8%]"><HeroSpeakerChip /></Floating>
+        <Floating depth={52} delay={1.1} duration={8} className="right-[0%] top-[26%]"><HeroSentimentChip /></Floating>
+        <Floating depth={44} delay={1.6} className="bottom-[6%] left-[2%]"><HeroActionItemsChip /></Floating>
+        <Floating depth={34} delay={0.9} duration={7.5} className="bottom-[8%] right-[2%]"><HeroReportChip /></Floating>
+      </div>
     </div>
+  );
+}
+
+// Hero collage cards, shared by the desktop floating layout and the mobile
+// stacked layout so the two never drift apart.
+function HeroMeetingCard() {
+  return (
+    <Glass ring className="gv-glow p-4">
+      <div className="flex items-center gap-2 border-b border-[rgb(var(--gv-fg)_/_0.1)] pb-3">
+        <span className="grid h-7 w-7 place-items-center rounded-md gv-grad text-white"><Icon.Video size={14} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12.5px] font-semibold">Q3 Roadmap Sync</p>
+          <p className="text-[10.5px] text-[rgb(var(--gv-fg)_/_0.45)]">Google Meet · live</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#06B6D4]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--gv-accent)]">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#06B6D4]" /> REC
+        </span>
+      </div>
+      <div className="mt-3 space-y-2.5">
+        <HeroLine initials="MR" name="Maya R." text="Let's lock the launch for September 14." tone="from-[#06B6D4] to-[#22D3EE]" />
+        <HeroLine initials="JK" name="Jordan K." text="Engineering can open the beta gate Thursday." tone="from-[#0E7490] to-[#0E7490]" />
+        <HeroLine ai initials="AI" name="gVoice" text="Decision detected · 2 action items captured" tone="from-[#06B6D4] to-[#0E7490]" />
+      </div>
+    </Glass>
+  );
+}
+
+function HeroSpeakerChip() {
+  return (
+    <Glass className="flex h-full items-center gap-2.5 px-3.5 py-2.5">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#06B6D4]/15 text-[var(--gv-accent)]"><Icon.Users size={15} /></span>
+      <div className="min-w-0">
+        <p className="text-[11.5px] font-semibold leading-tight">Speaker identified</p>
+        <p className="truncate text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Maya R. · 98% match</p>
+      </div>
+    </Glass>
+  );
+}
+
+function HeroSentimentChip() {
+  return (
+    <Glass className="flex h-full items-center gap-3 px-3.5 py-2.5">
+      <svg width="30" height="30" viewBox="0 0 36 36" className="-rotate-90 shrink-0">
+        <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
+        <circle cx="18" cy="18" r="15" fill="none" stroke="#06B6D4" strokeWidth="3" strokeLinecap="round" strokeDasharray="94" strokeDashoffset="9" />
+      </svg>
+      <div>
+        <p className="text-[12.5px] font-semibold leading-tight">92%</p>
+        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Positive</p>
+      </div>
+    </Glass>
+  );
+}
+
+function HeroActionItemsChip() {
+  return (
+    <Glass className="h-full px-3.5 py-3">
+      <p className="mb-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--gv-fg)_/_0.4)]"><Icon.CheckCircle size={11} className="text-[var(--gv-accent)]" /> Action items</p>
+      {["Ship brief — Maya", "Open beta gate — Jordan"].map((t) => (
+        <p key={t} className="flex items-center gap-1.5 text-[11px] text-[rgb(var(--gv-fg)_/_0.75)]"><Icon.Check size={10} className="shrink-0 text-[var(--gv-accent)]" /> {t}</p>
+      ))}
+    </Glass>
+  );
+}
+
+function HeroReportChip() {
+  return (
+    <Glass className="flex h-full items-center gap-2.5 px-3.5 py-2.5">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gv-grad text-white"><Icon.Download size={14} /></span>
+      <div className="min-w-0">
+        <p className="text-[11.5px] font-semibold leading-tight">Report ready</p>
+        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">in 1m 48s</p>
+      </div>
+    </Glass>
   );
 }
 

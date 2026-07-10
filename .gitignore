@@ -1,0 +1,37 @@
+node_modules/
+dist/
+.env
+.data/
+logs/
+*.log
+*.mp4
+*.webm
+*.wav
+*.m4a
+*.tmp
+gvoice-cost-estimation.html
+gvoice-deployment-plan.html
+gvoice-requirements-checklist.html
+gvoice-cost-estimation.html
+gvoice-deployment-plan.html
+gvoice-requirements-checklist.html
+bridge/pyannote/.venv
+
+# Local run tooling: downloaded static ffmpeg/mongod binaries + live Mongo data (866MB). Never commit.
+tools/
+
+# Provider transcript scratch output
+**/sarvam-output/
+
+# Env variants + local overrides
+.env.*
+!.env.example
+
+# OS/editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Internal docs — do not publish
+*.doc

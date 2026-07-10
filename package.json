@@ -1,0 +1,55 @@
+{
+  "name": "gvoice-meeting-intelligence",
+  "version": "1.0.0",
+  "description": "Production-grade meeting intelligence backend for Google Meet, Microsoft Teams, and Zoom.",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "worker": "tsx src/worker.ts",
+    "mom:regenerate": "tsx scripts/regenerate-mom-report.ts",
+    "session:reprocess": "tsx scripts/reprocess-session.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "google:login": "tsx scripts/google-login.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "@azure/storage-blob": "^12.27.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.58.9",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "form-data": "^4.0.1",
+    "helmet": "^8.2.0",
+    "ioredis": "^5.5.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.9.5",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "playwright": "^1.50.1",
+    "sarvamai": "^1.1.7",
+    "uuid": "^11.0.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.6"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  }
+}

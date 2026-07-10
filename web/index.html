@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F7F9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090c" />
+    <meta name="description" content="gVoice — Meeting Intelligence. Searchable recordings, transcripts, and sentiment for Google Meet, Teams, and Zoom." />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128.png" />
+    <link rel="icon" type="image/png" sizes="256x256" href="/favicon-256.png" />
+    <link rel="shortcut icon" href="/favicon-64.png" />
+    <link rel="apple-touch-icon" sizes="256x256" href="/favicon-256.png" />
+    <link rel="mask-icon" href="/icon.svg" color="#06B6D4" />
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <script>
+      // Pre-paint theme so the first frame already matches the user's choice.
+      // Runs before React mounts; no FOUC.
+      (function () {
+        try {
+          var stored = localStorage.getItem("gvoice:theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = stored === "light" ? "light"
+                    : stored === "dark"  ? "dark"
+                    : (prefersDark ? "dark" : "light");
+          var root = document.documentElement;
+          if (theme === "dark") root.classList.add("dark");
+          else root.classList.remove("dark");
+          root.style.colorScheme = theme;
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
+    />
+    <title>gVoice — Meeting Intelligence</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

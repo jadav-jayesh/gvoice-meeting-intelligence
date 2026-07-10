@@ -1,0 +1,389 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+ * Theme variables — light is default. Override at `html.dark`. We use
+ * plain hex strings (not space-separated rgb triplets) so Tailwind's
+ * `var(--x)` color tokens compile to bog-standard CSS — no <alpha-value>
+ * indirection, no surprises.
+ * ===================================================================== */
+:root {
+  /* gVoice AQUA — values mirror theme/theme.config.js (cssVars.light). Edit
+   * colors THERE; applyThemeVars() re-asserts these at runtime. */
+  --bg: #f7f7f9;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-hi: #f2f2f5;
+  --surface-max: #e7e7ec;
+  --line: #e7e7ec;
+  --line-hi: #d4d4dc;
+  --ink: #0f1115;
+  --ink-soft: #4b5563;
+  --ink-mute: #686b77;
+  --ink-faint: #9097a3;
+  --ring: #06b6d4;
+
+  /* Translucent overlays (used for glass/sticky/backdrop strips) */
+  --overlay-bg: rgba(247, 247, 249, 0.85);
+  --overlay-bg-soft: rgba(247, 247, 249, 0.6);
+  --overlay-surface: rgba(255, 255, 255, 0.95);
+  --over-hover: rgba(15, 17, 21, 0.04);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(15 17 21 / 0.04);
+  --shadow-md: 0 1px 3px 0 rgb(15 17 21 / 0.06), 0 1px 2px -1px rgb(15 17 21 / 0.03);
+  --shadow-lg: 0 12px 32px -8px rgb(15 17 21 / 0.10), 0 6px 14px -6px rgb(15 17 21 / 0.05);
+  --shadow-pop: 0 24px 60px -16px rgb(26 19 48 / 0.18), 0 10px 22px -10px rgb(26 19 48 / 0.10);
+
+  /* Ambient gradient — aqua */
+  --amb-1: rgb(6 182 212 / 0.07);
+  --amb-2: rgb(34 211 238 / 0.05);
+  --amb-3: rgb(134 239 172 / 0.03);
+  --grid: rgb(15 17 21 / 0.025);
+
+  --sidebar-w: 264px;
+  color-scheme: light;
+}
+
+html.dark {
+  --bg: #09090c;
+  --bg-elev: #0f1015;
+  --surface: #121319;
+  --surface-hi: #1a1c23;
+  --surface-max: #22242c;
+  --line: #272933;
+  --line-hi: #383b48;
+  --ink: #f7f8fb;
+  --ink-soft: #d4d6dd;
+  --ink-mute: #9b9faa;
+  --ink-faint: #696c77;
+  --ring: #22d3ee;
+
+  --overlay-bg: rgba(9, 9, 12, 0.85);
+  --overlay-bg-soft: rgba(9, 9, 12, 0.6);
+  --overlay-surface: rgba(18, 19, 25, 0.95);
+  --over-hover: rgba(255, 255, 255, 0.06);
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.55), 0 2px 6px -3px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 22px 48px -12px rgb(0 0 0 / 0.7), 0 10px 18px -8px rgb(0 0 0 / 0.45);
+  --shadow-pop: 0 30px 70px -20px rgb(0 0 0 / 0.9), 0 12px 22px -10px rgb(0 0 0 / 0.55);
+
+  --amb-1: rgb(6 182 212 / 0.12);
+  --amb-2: rgb(34 211 238 / 0.09);
+  --amb-3: rgb(134 239 172 / 0.05);
+  --grid: rgb(255 255 255 / 0.04);
+
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+              color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  pointer-events: none;
+  z-index: -2;
+  background-image:
+    radial-gradient(50% 35% at 10% 5%, var(--amb-1), transparent 70%),
+    radial-gradient(45% 35% at 92% 8%, var(--amb-2), transparent 70%),
+    radial-gradient(45% 35% at 50% 100%, var(--amb-3), transparent 70%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+}
+
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-hi);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+::selection {
+  background: rgb(6 182 212 / 0.20);
+  color: var(--ink);
+}
+
+.page-enter { animation: pageEnter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  .text-gradient-brand {
+    background-image: linear-gradient(135deg, #06b6d4 0%, #22d3ee 50%, #0e7490 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .surface-feature {
+    background:
+      radial-gradient(120% 80% at 0% 0%, rgb(6 182 212 / 0.08), transparent 60%),
+      radial-gradient(100% 80% at 100% 0%, rgb(34 211 238 / 0.06), transparent 60%),
+      var(--surface);
+  }
+  html.dark .surface-feature {
+    background:
+      radial-gradient(120% 80% at 0% 0%, rgb(6 182 212 / 0.12), transparent 60%),
+      radial-gradient(100% 80% at 100% 0%, rgb(34 211 238 / 0.10), transparent 60%),
+      var(--surface);
+  }
+
+  .surface-spotlight {
+    background:
+      radial-gradient(100% 100% at 50% 0%, rgb(6 182 212 / 0.10), transparent 70%),
+      var(--surface);
+  }
+  html.dark .surface-spotlight {
+    background:
+      radial-gradient(100% 100% at 50% 0%, rgb(6 182 212 / 0.14), transparent 70%),
+      var(--surface);
+  }
+
+  /* Translucent backdrops that flip with theme */
+  .bg-overlay      { background-color: var(--overlay-bg); }
+  .bg-overlay-soft { background-color: var(--overlay-bg-soft); }
+  .bg-surface-overlay { background-color: var(--overlay-surface); }
+  .hover-soft:hover  { background-color: var(--over-hover); }
+
+  /* Modal scrim: always dark regardless of theme so the modal stands clear. */
+  .bg-scrim { background-color: rgba(0, 0, 0, 0.5); }
+  html.dark .bg-scrim { background-color: rgba(0, 0, 0, 0.65); }
+
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 4px color-mix(in srgb, var(--ring) 55%, transparent);
+  }
+
+  .mask-fade-r {
+    -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent);
+            mask-image: linear-gradient(90deg, #000 80%, transparent);
+  }
+
+  /* Stagger animation */
+  .stagger > * {
+    opacity: 0;
+    animation: stagger-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(7) { animation-delay: 360ms; }
+  .stagger > *:nth-child(8) { animation-delay: 420ms; }
+  @keyframes stagger-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .tab-indicator {
+    position: absolute;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #06b6d4, #22d3ee);
+    border-radius: 2px;
+    transition: left 280ms cubic-bezier(0.22, 1, 0.36, 1),
+                width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .lift {
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--line-hi);
+  }
+
+  /* Glass card — translucent surface with backdrop blur and a faint inner
+   * highlight along the top edge to mimic a polished panel. Used on the
+   * auth pages to lift the form above the ambient background. */
+  .glass-card {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.06) 0%, rgb(255 255 255 / 0) 60%),
+      color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line-hi);
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.06) inset,
+      0 30px 80px -20px rgb(0 0 0 / 0.45),
+      0 14px 30px -14px rgb(0 0 0 / 0.35);
+  }
+  html.dark .glass-card {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.04) 0%, rgb(255 255 255 / 0) 50%),
+      color-mix(in srgb, var(--surface) 84%, transparent);
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.04) inset,
+      0 30px 80px -20px rgb(0 0 0 / 0.7),
+      0 14px 30px -14px rgb(0 0 0 / 0.5);
+  }
+
+  /* Soft colored halo placed behind a card to give it depth on dark backdrops.
+   * Position the parent relative and place this absolutely with -inset-X. */
+  .glow-halo {
+    background:
+      radial-gradient(60% 60% at 50% 0%, rgb(6 182 212 / 0.55), transparent 70%),
+      radial-gradient(50% 50% at 85% 100%, rgb(34 211 238 / 0.45), transparent 70%),
+      radial-gradient(45% 45% at 15% 100%, rgb(8 145 178 / 0.35), transparent 70%);
+    filter: blur(60px);
+  }
+
+  /* Aurora ribbon — sweeping conic gradient used at the top of the hero
+   * panel for a slow, premium ambient light. Pair with `animate-aurora`. */
+  .aurora {
+    background: conic-gradient(
+      from 220deg at 50% 50%,
+      rgb(6 182 212 / 0.0) 0deg,
+      rgb(6 182 212 / 0.35) 60deg,
+      rgb(8 145 178 / 0.30) 120deg,
+      rgb(34 211 238 / 0.35) 200deg,
+      rgb(6 182 212 / 0.30) 280deg,
+      rgb(6 182 212 / 0.0) 360deg
+    );
+    filter: blur(60px);
+  }
+  @keyframes aurora-spin {
+    from { transform: rotate(0deg) scale(1); }
+    to   { transform: rotate(360deg) scale(1); }
+  }
+  .animate-aurora { animation: none; } /* rotation re-rasters a huge blurred layer every frame; static ribbon looks the same */
+
+  /* Subtle film-grain noise — adds tactility to flat dark gradients. SVG is
+   * inlined so there's no extra HTTP request. */
+  .noise {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
+    background-size: 160px 160px;
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+  }
+  html.dark .noise { opacity: 0.04; }
+
+  /* Gradient border ring — paints a 1px conic gradient that pulses slowly,
+   * used as a premium accent on the auth form card. */
+  .gradient-ring::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(
+      from 0deg,
+      rgb(6 182 212 / 0.6),
+      rgb(8 145 178 / 0.4),
+      rgb(34 211 238 / 0.6),
+      rgb(6 182 212 / 0.6)
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+    animation: gradient-ring-spin 8s linear infinite;
+  }
+  @keyframes gradient-ring-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Animated grid / starfield used as a hero panel backdrop. Tuned so it
+   * remains subtle in light mode and just-visible in dark mode. */
+  .hero-grid {
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse at center, #000 35%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 35%, transparent 75%);
+  }
+  html:not(.dark) .hero-grid {
+    background-image:
+      linear-gradient(rgb(13 14 19 / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(13 14 19 / 0.05) 1px, transparent 1px);
+  }
+
+  @keyframes float-y {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+  }
+  .animate-float-y { animation: none; } /* moving a backdrop-filter card recomputes the backdrop each frame */
+
+  @keyframes pulse-ring {
+    0%   { transform: scale(0.9); opacity: 0.7; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  .pulse-ring::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    box-shadow: 0 0 0 2px rgb(6 182 212 / 0.6);
+    animation: pulse-ring 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-y,
+  .animate-aurora,
+  .gradient-ring::before,
+  .pulse-ring::after { animation: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .stagger > * { opacity: 1 !important; transform: none !important; }
+}

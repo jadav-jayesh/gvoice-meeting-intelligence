@@ -477,13 +477,13 @@ function HeroPipeline() {
           className="absolute left-0 top-0"
           style={{ width: HERO_COLLAGE_W, height: HERO_COLLAGE_H, transformOrigin: "top left", transform: `scale(${scale})` }}
         >
-          <HeroCollage />
+          <HeroCollage gradientId="gv-line-mobile" />
         </div>
       </div>
 
       {/* lg+: the original collage, unscaled — desktop look unchanged. */}
       <div className="relative mx-auto hidden aspect-[5/4.6] w-full max-w-[620px] lg:block">
-        <HeroCollage />
+        <HeroCollage gradientId="gv-line-desktop" />
       </div>
     </div>
   );
@@ -492,20 +492,22 @@ function HeroPipeline() {
 // The floating meeting-intelligence collage: animated gradient connectors +
 // parallax glass cards. Rendered at its native 620px design size and either
 // shown 1:1 (desktop) or scaled to fit (mobile/tablet) by HeroPipeline.
-function HeroCollage() {
+function HeroCollage({ gradientId }: { gradientId: string }) {
   return (
     <>
-      {/* animated connectors */}
+      {/* animated connectors. gradientId is unique per instance — the desktop and
+          mobile collages both mount, and a shared id would make the visible SVG
+          reference the hidden one's (display:none) gradient, blanking the lines. */}
       <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="gv-line" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#06B6D4" />
             <stop offset="50%" stopColor="#22D3EE" />
             <stop offset="100%" stopColor="#0E7490" />
           </linearGradient>
         </defs>
         {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
-          <path key={i} d={d} stroke="url(#gv-line)" strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
+          <path key={i} d={d} stroke={`url(#${gradientId})`} strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
         ))}
       </svg>
 

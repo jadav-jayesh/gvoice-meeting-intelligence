@@ -656,12 +656,16 @@ function Solution() {
       <div className="mx-auto max-w-6xl">
         <SectionHead eyebrow="The solution" title={<>From conversation to <span className="gv-grad-text">accountability.</span></>} subtitle="gVoice automatically transforms meetings into structured knowledge and trackable outcomes — no manual work required." />
         <Reveal className="mt-14">
-          <div className="relative overflow-x-auto">
-            <div aria-hidden className="absolute left-0 right-0 top-[26px] h-px bg-gradient-to-r from-transparent via-[#06B6D4]/40 to-transparent" />
-            <ol className="flex min-w-max items-start gap-3 sm:grid sm:min-w-0 sm:grid-cols-7 sm:gap-2">
+          <div className="relative sm:overflow-x-auto">
+            {/* The connecting line only reads correctly across the single desktop
+                row — hide it on mobile where the steps wrap into a grid. */}
+            <div aria-hidden className="absolute left-0 right-0 top-[26px] hidden h-px bg-gradient-to-r from-transparent via-[#06B6D4]/40 to-transparent sm:block" />
+            {/* Mobile: a centered wrapping grid of step chips (no cut-off
+                horizontal scroll). Desktop (sm+): the original 7-across row. */}
+            <ol className="flex flex-wrap justify-center gap-x-4 gap-y-7 sm:grid sm:min-w-0 sm:grid-cols-7 sm:gap-2">
               {flow.map((s, i) => (
-                <li key={s.t} className="relative w-[140px] text-center sm:w-auto">
-                  <span className="relative z-10 mx-auto grid h-13 w-13 place-items-center rounded-full border border-[rgb(var(--gv-fg)_/_0.1)] bg-[var(--gv-surface)] text-[var(--gv-accent)]" style={{ height: 52, width: 52 }}>{s.icon}</span>
+                <li key={s.t} className="relative w-[100px] text-center sm:w-auto">
+                  <span className="relative z-10 mx-auto grid place-items-center rounded-full border border-[rgb(var(--gv-fg)_/_0.1)] bg-[var(--gv-surface)] text-[var(--gv-accent)]" style={{ height: 52, width: 52 }}>{s.icon}</span>
                   <p className="mx-auto mt-3 max-w-[120px] text-[12.5px] font-medium text-[rgb(var(--gv-fg)_/_0.8)]">{s.t}</p>
                   <span className="mt-1 block text-[10px] font-semibold tabular-nums text-[rgb(var(--gv-fg)_/_0.25)]">0{i + 1}</span>
                 </li>

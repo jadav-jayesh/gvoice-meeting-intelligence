@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { BrandLogo } from "../components/BrandLogo";
 import { useTheme } from "../theme/ThemeProvider";
+import { useAuth } from "../auth/AuthProvider";
 import { buildMomHtml } from "../lib/mom";
 import type { Meeting } from "../lib/types";
 
@@ -312,6 +313,7 @@ function MoonGlyph() {
 }
 
 function Nav() {
+  const { status } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState("");
   useEffect(() => {
@@ -378,10 +380,19 @@ function Nav() {
         </div>
         <div className="flex items-center gap-2.5">
           <GVThemeToggle />
-          <Link to="/login" className="hidden rounded-lg px-3 py-2 text-[13.5px] font-medium text-[rgb(var(--gv-fg)_/_0.75)] transition-colors hover:text-[rgb(var(--gv-fg))] sm:block">
-            Log in
-          </Link>
-          <PrimaryBtn to="/signup">Start Free</PrimaryBtn>
+          {/* Reflect auth state: a logged-in visitor gets a Dashboard button
+              instead of Log in / Start Free. While auth is still loading we
+              render nothing so a logged-in user never flashes "Log in". */}
+          {status === "authenticated" ? (
+            <PrimaryBtn to="/dashboard" trailing={<Icon.ArrowRight size={15} />}>Dashboard</PrimaryBtn>
+          ) : status === "anonymous" ? (
+            <>
+              <Link to="/login" className="hidden rounded-lg px-3 py-2 text-[13.5px] font-medium text-[rgb(var(--gv-fg)_/_0.75)] transition-colors hover:text-[rgb(var(--gv-fg))] sm:block">
+                Log in
+              </Link>
+              <PrimaryBtn to="/signup">Start Free</PrimaryBtn>
+            </>
+          ) : null}
         </div>
       </nav>
     </header>

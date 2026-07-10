@@ -49,7 +49,7 @@ export function MobileNav({ onOpenPalette }: Props) {
         className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-surface-overlay backdrop-blur-md border-t border-line"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 6px)" }}
       >
-        <ul className="grid grid-cols-3">
+        <ul className="grid grid-cols-4">
           {items.map(({ to, label, icon: ItemIcon }) => (
             <li key={to}>
               <NavLink
@@ -67,10 +67,20 @@ export function MobileNav({ onOpenPalette }: Props) {
                       <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-b-full bg-brand-500" />
                     )}
                     <ItemIcon
-                      size={18}
-                      className={isActive ? "text-brand-500 dark:text-brand-400" : ""}
+                      size={19}
+                      className={clsx(
+                        "transition-transform",
+                        isActive ? "text-brand-500 dark:text-brand-400 -translate-y-px scale-105" : ""
+                      )}
                     />
-                    <span className="text-[10px]">{label}</span>
+                    <span
+                      className={clsx(
+                        "text-[10px] leading-none tracking-tight",
+                        isActive ? "font-semibold text-brand-500 dark:text-brand-400" : "font-medium"
+                      )}
+                    >
+                      {label}
+                    </span>
                   </>
                 )}
               </NavLink>

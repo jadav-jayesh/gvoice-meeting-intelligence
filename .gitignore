@@ -35,3 +35,6 @@ tools/
 
 # Internal docs — do not publish
 *.doc
+
+# TS incremental build cache
+*.tsbuildinfo

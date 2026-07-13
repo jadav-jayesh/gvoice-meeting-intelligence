@@ -83,14 +83,20 @@ export class SpeakerResolverService {
 
       this.logger.info(
         {
-          threshold: env.SPEAKER_RESOLVER_CONFIDENCE_THRESHOLD,
+          hardThreshold: env.SPEAKER_RESOLVER_CONFIDENCE_THRESHOLD,
+          softThreshold: env.SPEAKER_RESOLVER_SOFT_CONFIDENCE_THRESHOLD,
           mappings: parsed.mappings.map((mapping) => ({
             clusterId: mapping.clusterId,
             speaker: mapping.speaker,
             confidence: mapping.confidence,
-            applied: resolved.appliedClusterIds.has(mapping.clusterId),
+            appliedAs: resolved.accepted.get(mapping.clusterId)?.tier ?? "rejected",
             reason: mapping.reason
-          }))
+          })),
+          // Assignments the model did not name directly (soft-accepted or filled in
+          // by last-one-standing elimination) — surfaced so the choice is auditable.
+          derivedAssignments: [...resolved.accepted.entries()]
+            .filter(([, mapping]) => mapping.tier !== "confident")
+            .map(([clusterId, mapping]) => ({ clusterId, speaker: mapping.speaker, confidence: mapping.confidence, tier: mapping.tier }))
         },
         "llm speaker resolver decisions"
       );
@@ -193,32 +199,102 @@ function summarizeCurrentMappings(transcript: DiarizedTranscriptSegment[], parti
     .sort((a, b) => a.clusterId.localeCompare(b.clusterId));
 }
 
+interface AcceptedMapping {
+  speaker: string;
+  confidence: number;
+  tier: "confident" | "soft" | "elimination";
+}
+
 function applyResolverMappings(
   transcript: DiarizedTranscriptSegment[],
   mappings: ResolverMapping[],
   participantNames: string[],
   lockedClusterIds: Set<string>
-): { transcript: DiarizedTranscriptSegment[]; appliedClusterIds: Set<string> } {
+): { transcript: DiarizedTranscriptSegment[]; accepted: Map<string, AcceptedMapping> } {
   const participantsByKey = new Map(participantNames.map((name) => [name.toLocaleLowerCase("en-US"), name]));
-  const accepted = new Map<string, ResolverMapping>();
+  const canonical = (name: string): string | undefined => {
+    const cleaned = cleanParticipantName(name);
+    return cleaned ? participantsByKey.get(cleaned.toLocaleLowerCase("en-US")) : undefined;
+  };
 
+  // Cluster order + the name each cluster already carries from the deterministic
+  // stage, so we can tell which clusters/names are still free.
+  const clusterOrder: string[] = [];
+  const currentSpeakerByCluster = new Map<string, string>();
+  {
+    const byCluster = new Map<string, DiarizedTranscriptSegment[]>();
+    for (const segment of transcript) {
+      const clusterId = segmentClusterId(segment);
+      if (!byCluster.has(clusterId)) clusterOrder.push(clusterId);
+      byCluster.set(clusterId, [...(byCluster.get(clusterId) ?? []), segment]);
+    }
+    for (const [clusterId, segments] of byCluster) currentSpeakerByCluster.set(clusterId, dominantSpeaker(segments));
+  }
+
+  // Best (highest-confidence) proposal per cluster; locked clusters are untouchable.
+  const bestByCluster = new Map<string, { speaker: string; confidence: number }>();
   for (const mapping of mappings) {
-    if (mapping.confidence < env.SPEAKER_RESOLVER_CONFIDENCE_THRESHOLD) continue;
     if (lockedClusterIds.has(mapping.clusterId)) continue;
-
-    const cleaned = cleanParticipantName(mapping.speaker);
-    if (!cleaned) continue;
-    const canonicalSpeaker = participantsByKey.get(cleaned.toLocaleLowerCase("en-US"));
+    const canonicalSpeaker = canonical(mapping.speaker);
     if (!canonicalSpeaker) continue;
-
-    const existing = accepted.get(mapping.clusterId);
+    const existing = bestByCluster.get(mapping.clusterId);
     if (!existing || mapping.confidence > existing.confidence) {
-      accepted.set(mapping.clusterId, { ...mapping, speaker: canonicalSpeaker });
+      bestByCluster.set(mapping.clusterId, { speaker: canonicalSpeaker, confidence: mapping.confidence });
     }
   }
 
+  const accepted = new Map<string, AcceptedMapping>();
+  const usedNames = new Set<string>();
+
+  // A name is already spoken for if it sits on a locked cluster, or on a cluster
+  // the resolver will not touch (no proposal) — either way it can't be reused.
+  for (const clusterId of clusterOrder) {
+    const canonicalCurrent = canonical(currentSpeakerByCluster.get(clusterId) ?? "");
+    if (canonicalCurrent && (lockedClusterIds.has(clusterId) || !bestByCluster.has(clusterId))) {
+      usedNames.add(canonicalCurrent.toLocaleLowerCase("en-US"));
+    }
+  }
+
+  const proposals = [...bestByCluster.entries()]
+    .map(([clusterId, proposal]) => ({ clusterId, ...proposal }))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const hard = env.SPEAKER_RESOLVER_CONFIDENCE_THRESHOLD;
+  const soft = Math.min(env.SPEAKER_RESOLVER_SOFT_CONFIDENCE_THRESHOLD, hard);
+
+  const claim = (clusterId: string, speaker: string, confidence: number, tier: AcceptedMapping["tier"]): void => {
+    accepted.set(clusterId, { speaker, confidence, tier });
+    usedNames.add(speaker.toLocaleLowerCase("en-US"));
+  };
+
+  // Tier 1 — confident: at/above the hard threshold, highest-confidence first so a
+  // contested name lands on the cluster most sure of it.
+  for (const proposal of proposals) {
+    if (proposal.confidence < hard) continue;
+    if (usedNames.has(proposal.speaker.toLocaleLowerCase("en-US"))) continue;
+    claim(proposal.clusterId, proposal.speaker, proposal.confidence, "confident");
+  }
+
+  // Tier 2 — soft: a below-threshold guess still wins its name if no more confident
+  // cluster already took it. Recovers "probably Ashok" instead of leaving it blank.
+  for (const proposal of proposals) {
+    if (accepted.has(proposal.clusterId)) continue;
+    if (proposal.confidence < soft || proposal.confidence >= hard) continue;
+    if (usedNames.has(proposal.speaker.toLocaleLowerCase("en-US"))) continue;
+    claim(proposal.clusterId, proposal.speaker, proposal.confidence, "soft");
+  }
+
+  // Tier 3 — elimination: when exactly one cluster is still unnamed and exactly one
+  // participant is still unused, they can only be each other.
+  const finalSpeaker = (clusterId: string): string => accepted.get(clusterId)?.speaker ?? currentSpeakerByCluster.get(clusterId) ?? "";
+  const unnamedClusters = clusterOrder.filter((clusterId) => !canonical(finalSpeaker(clusterId)));
+  const unusedNames = participantNames.filter((name) => !usedNames.has(name.toLocaleLowerCase("en-US")));
+  if (unnamedClusters.length === 1 && unusedNames.length === 1) {
+    claim(unnamedClusters[0], unusedNames[0], hard, "elimination");
+  }
+
   return {
-    appliedClusterIds: new Set(accepted.keys()),
+    accepted,
     transcript: transcript.map((segment) => {
       const mapping = accepted.get(segmentClusterId(segment));
       if (!mapping) return segment;

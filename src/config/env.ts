@@ -190,6 +190,12 @@ const envSchema = z.object({
   SPEAKER_MAPPING_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
   SPEAKER_RESOLVER_ENABLED: booleanFromEnv.default(true),
   SPEAKER_RESOLVER_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+  // Second-chance threshold: a resolver guess below the hard threshold above is
+  // still applied when the participant name it points at is not already claimed
+  // by a more confident cluster. Recovers correct-but-unsure names (e.g. a voice
+  // the model is 0.62 sure is "Ashok") without letting them steal a name from a
+  // cluster that is more certain. Set equal to the hard threshold to disable.
+  SPEAKER_RESOLVER_SOFT_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   ALLOW_LOW_CONFIDENCE_DOMINANCE_MAPPING: booleanFromEnv.default(false),
 
   // ── Provider selection (Sarvam vs. Whisper+Pyannote) ──────────────────────

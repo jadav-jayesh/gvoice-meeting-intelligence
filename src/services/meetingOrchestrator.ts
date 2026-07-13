@@ -17,6 +17,7 @@ import { buildCaptionDerivedTranscript } from "../processing/captionTranscript";
 import { normalizeDiarizedTranscript } from "../processing/diarization";
 import { assessWhisperReliability } from "../processing/transcriptQuality";
 import { mapSpeakersToParticipants } from "../processing/speakerMapper";
+import { reconcileTeamsSegments, estimateClockOffset } from "../processing/teamsSpeakerRemap";
 import { buildTranscriptText } from "../processing/transcriptText";
 import { validateCompletion } from "../processing/validation";
 import { MeetingRecorder } from "../media/recorder";
@@ -675,6 +676,50 @@ export class MeetingOrchestrator {
               meetingStartedAt: joinedAt
             });
             transcriptText = buildTranscriptText(diarizedTranscript);
+
+            // Adopt the external SDK transcript wholesale when available. The
+            // Teams Graph / Zoom transcript labels every line with the EXACT
+            // speaker AND splits overlapping/rapid turns per speaker — audio
+            // diarisation instead merges those into one block and mis-names it.
+            // So we replace the audio-derived segments with the SDK transcript
+            // (reconciling its speaker names to the participant roster); its
+            // text + segmentation are the ground truth. Only runs when such a
+            // transcript is present, so audio-only meetings are unaffected.
+            // NOTE: Teams caption text is English-biased — a future language
+            // gate can keep the audio (Sarvam) text for Gujarati/Hindi meetings.
+            if (graphTranscriptAvailable && graphDiarizedTranscript.length > 0) {
+              const audioSegmentCount = diarizedTranscript.length;
+              // `participants` is already deduped upstream (mergeParticipants →
+              // dedupeParticipants collapses "Taaif Dadan" onto "Taaif" via
+              // cleanParticipantName), so reconciled labels stay consistent.
+              // The SDK transcript runs on the meeting clock; the recorded audio
+              // (and the video the UI plays) starts when the bot joined. Align
+              // the SDK timestamps to the recording clock so the transcript
+              // highlights the correct line during playback.
+              const clockOffsetSeconds = estimateClockOffset(
+                diarizedTranscript.map((segment) => segment.startTime),
+                graphDiarizedTranscript.map((segment) => ({ speaker: segment.speaker, start: segment.startTime, end: segment.endTime }))
+              );
+              diarizedTranscript = reconcileTeamsSegments(
+                graphDiarizedTranscript,
+                participants.map((participant) => participant.name).filter(Boolean),
+                clockOffsetSeconds
+              );
+              transcriptText = buildTranscriptText(diarizedTranscript);
+              await this.appendLog(session, {
+                phase: "transcription",
+                event: "sdk_transcript_adopted",
+                message: "Adopted the external SDK transcript for correct speaker splitting",
+                status: "processing",
+                metadata: {
+                  source: sdkTranscriptSource,
+                  audioSegmentCount,
+                  sdkSegmentCount: diarizedTranscript.length,
+                  clockOffsetSeconds: Math.round(clockOffsetSeconds)
+                }
+              });
+            }
+
             await this.appendLog(session, {
               phase: "transcription",
               event: "speaker_resolution_completed",

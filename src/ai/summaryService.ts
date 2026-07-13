@@ -122,7 +122,13 @@ export class SummaryService {
             ].join("\n")
           }
         ],
-        "summary"
+        "summary",
+        // The summary emits one sentiment entry PER segment plus the summary,
+        // action items, chapters and moments — output scales with the meeting.
+        // On reasoning deployments reasoning tokens also come out of this budget,
+        // so give it generous, segment-scaled headroom (a too-small cap returns
+        // empty content and drops the whole meeting to the fallback summary).
+        { maxCompletionTokens: Math.min(16000, 6000 + input.transcript.length * 40) }
       );
 
       const parsed = summarySchema.parse(response);

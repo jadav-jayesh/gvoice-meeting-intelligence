@@ -51,21 +51,40 @@ export class AzureOpenAIClient {
   ): Promise<T> {
     this.assertChatConfigured();
     const url = env.AZURE_OPENAI_SUMMARY_ENDPOINT ?? this.deploymentUrl(env.AZURE_OPENAI_CHAT_DEPLOYMENT as string, "chat/completions");
-    const maxCompletionTokens = options.maxCompletionTokens ?? 900;
-    const body = {
+    // gpt-5 / reasoning deployments spend reasoning tokens out of this same
+    // budget before emitting any output — too small a cap yields an empty
+    // message (no content) rather than a short answer. 900 was enough for
+    // legacy chat models but starves reasoning models, so default higher.
+    const maxCompletionTokens = options.maxCompletionTokens ?? 4000;
+
+    // Deployments disagree on the request shape: reasoning models (o1/o3/gpt-5*)
+    // reject any non-default `temperature`; older / non-o1 deployments reject
+    // `max_completion_tokens` and want `max_tokens`; some reject `response_format`.
+    // Start with the modern shape and, on a 400 that names an unsupported
+    // parameter, adapt the body and retry — so one client works across every
+    // deployment instead of silently falling back to a canned summary.
+    let body: Record<string, unknown> = {
       messages,
       temperature: 0.2,
       response_format: { type: "json_object" },
       max_completion_tokens: maxCompletionTokens
     };
 
-    const response = await this.postJsonWithRetry(url, body);
-    if (!response.ok && response.status === 400) {
-      const retry = await this.postJsonWithRetry(url, { messages, temperature: 0.2, max_completion_tokens: maxCompletionTokens });
-      return parseChatJson(await readAzureResponse(retry), fallbackLabel);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await this.postJsonWithRetry(url, body);
+      if (response.ok) {
+        return parseChatJson(await readAzureResponse(response), fallbackLabel);
+      }
+
+      const errorText = await response.text();
+      const adapted = response.status === 400 ? adaptBodyForAzure400(body, errorText) : undefined;
+      if (!adapted) {
+        throw new Error(`Azure OpenAI request failed with ${response.status}: ${errorText}`);
+      }
+      body = adapted;
     }
 
-    return parseChatJson(await readAzureResponse(response), fallbackLabel);
+    throw new Error(`Azure OpenAI ${fallbackLabel} request failed: no parameter shape accepted by the deployment`);
   }
 
   async transcribeAudio(audioPath: string): Promise<unknown> {
@@ -147,6 +166,41 @@ async function readAzureResponse(response: Response): Promise<unknown> {
     throw new Error(`Azure OpenAI request failed with ${response.status}: ${text}`);
   }
   return text ? JSON.parse(text) : {};
+}
+
+// On a 400 that names an unsupported parameter, return an adapted body so the
+// next attempt matches what the deployment accepts. Returns undefined when the
+// error is not a known parameter mismatch (nothing worth retrying).
+export function adaptBodyForAzure400(body: Record<string, unknown>, errorText: string): Record<string, unknown> | undefined {
+  const message = errorText.toLocaleLowerCase("en-US");
+  const next: Record<string, unknown> = { ...body };
+  let changed = false;
+
+  // Token-limit parameter: reasoning models want `max_completion_tokens`; older
+  // deployments want `max_tokens`. Swap to the form the error is not rejecting.
+  if (message.includes("max_completion_tokens") && "max_completion_tokens" in next) {
+    next.max_tokens = next.max_completion_tokens;
+    delete next.max_completion_tokens;
+    changed = true;
+  } else if (message.includes("max_tokens") && "max_tokens" in next) {
+    next.max_completion_tokens = next.max_tokens;
+    delete next.max_tokens;
+    changed = true;
+  }
+
+  // Reasoning models only allow the default temperature (1) — drop ours.
+  if (message.includes("temperature") && "temperature" in next) {
+    delete next.temperature;
+    changed = true;
+  }
+
+  // Some deployments / api-versions don't support JSON response_format.
+  if (message.includes("response_format") && "response_format" in next) {
+    delete next.response_format;
+    changed = true;
+  }
+
+  return changed ? next : undefined;
 }
 
 function isRetryableAzureStatus(status: number): boolean {

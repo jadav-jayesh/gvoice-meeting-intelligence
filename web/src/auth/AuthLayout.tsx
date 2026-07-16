@@ -11,12 +11,6 @@ interface Props {
   footer: ReactNode;
 }
 
-const heroStats: Array<{ label: string; value: string }> = [
-  { value: "12.4k", label: "Meetings transcribed" },
-  { value: "98%", label: "Speaker accuracy" },
-  { value: "<2m", label: "Time-to-summary" }
-];
-
 export function AuthLayout({ title, subtitle, children, footer }: Props) {
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-bg text-ink">
@@ -208,7 +202,7 @@ function HeroPanel() {
 
       {/* One centered column so the panel never reads as half-empty on very
        * wide screens — logo, pitch, preview and proof all share one measure. */}
-      <div className="relative z-10 flex flex-col justify-between gap-10 w-full max-w-[680px] mx-auto p-10 xl:px-12 xl:py-11">
+      <div className="relative z-10 flex flex-col justify-center gap-10 w-full max-w-[680px] mx-auto p-10 xl:px-12 xl:py-11">
         {/* Top: brand */}
         <div className="flex items-center">
           <Link to="/" aria-label="gVoice home" className="focus-ring rounded-lg">
@@ -237,22 +231,6 @@ function HeroPanel() {
           <HowItWorks />
 
           <ProductPreview />
-        </div>
-
-        {/* Bottom: trusted-by + stat row */}
-        <div className="space-y-5">
-          <TrustedByStrip />
-          <div className="flex items-center gap-6">
-            {heroStats.map((s, i) => (
-              <div key={s.label} className="flex items-center gap-6">
-                {i > 0 && <span aria-hidden className="w-px h-9 bg-line" />}
-                <div>
-                  <p className="text-[22px] font-semibold text-ink tracking-tight tabular-nums">{s.value}</p>
-                  <p className="text-[10.5px] uppercase tracking-widest text-inkFaint mt-0.5">{s.label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </aside>
@@ -408,41 +386,6 @@ function ProductPreview() {
         </div>
       </div>
     </div>
-  );
-}
-
-function TrustedByStrip() {
-  // Abstract pseudo-logos — generic enough to feel like brand marks without
-  // pretending to be a specific company.
-  const marks = [
-    { name: "Northwind" },
-    { name: "Helix Labs" },
-    { name: "Orbital" },
-    { name: "Lumenly" }
-  ];
-  return (
-    <div className="flex items-center gap-6">
-      <p className="text-[10.5px] uppercase tracking-widest text-inkFaint shrink-0">
-        Trusted by teams at
-      </p>
-      <div className="flex items-center gap-5 flex-wrap text-inkMute">
-        {marks.map((m) => (
-          <span key={m.name} className="flex items-center gap-1.5 text-[12.5px] font-medium opacity-70">
-            <BrandMark />
-            {m.name}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BrandMark() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M7 13l3 3 7 -7" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 

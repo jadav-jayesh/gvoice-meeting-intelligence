@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { BrandLogo } from "../components/BrandLogo";
 import { Icon } from "../components/Icon";
 import { ThemeToggle } from "../theme/ThemeToggle";
@@ -27,7 +28,9 @@ export function AuthLayout({ title, subtitle, children, footer }: Props) {
         <ThemeToggle />
       </div>
 
-      <div className="relative z-10 min-h-screen w-full flex flex-col lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
+      <div className="relative z-10 min-h-screen w-full flex flex-col">
+        {/* Marketing panel removed from the auth pages — a centered form only, so
+            login/signup never scroll. Kept defined (rendered hidden) for reuse. */}
         <HeroPanel />
 
         <main className="relative flex flex-1 items-center justify-center px-5 sm:px-8 py-10 lg:py-14 overflow-hidden">
@@ -80,8 +83,10 @@ export function AuthLayout({ title, subtitle, children, footer }: Props) {
           </div>
 
           <div className="relative w-full max-w-[440px] animate-[fadeUp_0.5s_cubic-bezier(0.22,1,0.36,1)_both]">
-            <div className="lg:hidden mb-8 flex justify-center">
-              <BrandLogo height={28} />
+            <div className="mb-8 flex justify-center">
+              <Link to="/" aria-label="gVoice home" className="focus-ring rounded-lg">
+                <BrandLogo height={28} />
+              </Link>
             </div>
 
             <FormShell title={title} subtitle={subtitle}>
@@ -185,7 +190,7 @@ function FormShell({ title, subtitle, children }: { title: string; subtitle: Rea
 
 function HeroPanel() {
   return (
-    <aside className="hidden lg:flex relative overflow-hidden border-r border-line">
+    <aside className="hidden relative overflow-hidden border-r border-line">
       {/* Layered backdrop */}
       <div aria-hidden className="absolute inset-0 surface-feature" />
       <div aria-hidden className="absolute inset-0 hero-grid opacity-60" />

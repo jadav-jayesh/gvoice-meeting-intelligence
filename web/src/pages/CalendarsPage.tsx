@@ -103,7 +103,9 @@ export function CalendarsPage() {
         </div>
       )}
 
-      {(["google", "microsoft"] as CalendarProvider[]).map((provider) => {
+      {/* Microsoft first: it works for everyone, while Google is still test-user
+          gated (unverified sensitive scope) — lead with the flow that succeeds. */}
+      {(["microsoft", "google"] as CalendarProvider[]).map((provider) => {
         const meta = PROVIDER_META[provider];
         const connection = byProvider(provider);
         const available = data?.available[provider] ?? false;

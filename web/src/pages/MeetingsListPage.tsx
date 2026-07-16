@@ -26,7 +26,11 @@ import {
   platformLabel,
   platformTone,
   sentimentTone,
-  statusTone
+  statusTone,
+  statusLabel,
+  statusDotClass,
+  isMeetingInProgress,
+  isMeetingStale
 } from "../lib/format";
 
 const platformOptions: Array<{ value: "" | BotPlatform; label: string }> = [
@@ -457,12 +461,27 @@ function MeetingRow({ item }: { item: MeetingListItem }) {
             item.summary?.trim() || <span className="text-inkMute italic">Untitled meeting</span>}
         </p>
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          {item.recordingUrl && (
-            <span className="inline-flex items-center gap-1 text-[10.5px] text-inkMute">
-              <span className="w-1.5 h-1.5 rounded-full bg-positive" />
-              Recording
-            </span>
-          )}
+          {/* Dynamic session status (completed / recording / processing / failed …),
+              coloured by tone; the dot pulses while the meeting is genuinely live.
+              A non-terminal status with no activity for hours reads as "Stalled"
+              (grey, no pulse) so a day-old queued job doesn't look ongoing. */}
+          {(() => {
+            const stale = isMeetingStale(item.status, item.updatedAt);
+            const live = isMeetingInProgress(item.status) && !stale;
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-[10.5px] text-inkMute"
+                title={stale ? "No activity for hours — likely never completed" : undefined}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    stale ? "bg-inkFaint" : statusDotClass(item.status)
+                  }${live ? " animate-pulse" : ""}`}
+                />
+                {stale ? "Stalled" : statusLabel(item.status)}
+              </span>
+            );
+          })()}
           {item.actionItems.length > 0 && (
             <span className="inline-flex items-center gap-1 text-[10.5px] text-inkMute">
               <Icon.Bolt size={10} className="text-warn" />
@@ -695,7 +714,7 @@ function MeetingCard({ item }: { item: MeetingListItem }) {
               tone={statusTone(item.status)}
               className="!bg-black/55 !text-white !border-white/15 backdrop-blur-md shadow-sm"
             >
-              {item.status.replace(/_/g, " ")}
+              {isMeetingStale(item.status, item.updatedAt) ? "Stalled" : statusLabel(item.status)}
             </Badge>
           </div>
 

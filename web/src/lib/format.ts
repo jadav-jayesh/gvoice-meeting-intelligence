@@ -75,6 +75,38 @@ export function statusTone(status: BotStatus): BadgeTone {
   }
 }
 
+// Human-readable label for a session status (the raw enum is snake_case).
+export function statusLabel(status: BotStatus): string {
+  switch (status) {
+    case "awaiting_transcript":
+      return "Awaiting transcript";
+    case "transcript_ready":
+      return "Transcript ready";
+    case "transcript_unavailable":
+      return "No transcript";
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
+  }
+}
+
+// Solid dot colour for a status, derived from its tone — used for the small
+// inline status indicator in the meetings list (Badge's dot uses bg-current,
+// but the list chip's text stays muted, so we colour the dot explicitly).
+export function statusDotClass(status: BotStatus): string {
+  switch (statusTone(status)) {
+    case "positive":
+      return "bg-positive";
+    case "negative":
+      return "bg-negative";
+    case "warn":
+      return "bg-warn";
+    case "info":
+      return "bg-info";
+    default:
+      return "bg-inkFaint";
+  }
+}
+
 // Statuses where the bot/pipeline is still working on the session. The detail
 // page keeps polling while the meeting is in one of these, and the download
 // actions stay hidden until the session reaches "completed".
@@ -94,6 +126,19 @@ const IN_PROGRESS_STATUSES: ReadonlySet<BotStatus> = new Set<BotStatus>([
 
 export function isMeetingInProgress(status: BotStatus): boolean {
   return IN_PROGRESS_STATUSES.has(status);
+}
+
+// A session stuck in a non-terminal status with no activity for this long is
+// treated as STALLED rather than live: a calendar auto-join that never ran, or
+// a bot/worker that died mid-pipeline. The window is generous (6h) so it never
+// trips on a genuinely long meeting (max 4h) that is still uploading/processing.
+const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+
+export function isMeetingStale(status: BotStatus, lastActivity?: string | Date | null): boolean {
+  if (!isMeetingInProgress(status)) return false;
+  if (!lastActivity) return false;
+  const t = new Date(lastActivity).getTime();
+  return !Number.isNaN(t) && Date.now() - t > STALE_AFTER_MS;
 }
 
 export function sentimentTone(label: SentimentLabel | undefined): BadgeTone {

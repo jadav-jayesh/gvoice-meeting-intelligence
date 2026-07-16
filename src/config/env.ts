@@ -174,6 +174,12 @@ const envSchema = z.object({
   SARVAM_API_KEY: z.string().optional(),
   SARVAM_DIARIZATION_URL: z.string().optional(),
   SARVAM_LANGUAGE_CODE: z.string().default("unknown"),
+  // When SARVAM_LANGUAGE_CODE is "unknown", detect the REAL spoken language from
+  // a short sample before the full transcription (Sarvam's own auto-detect keeps
+  // mislabelling code-mixed Indic audio as English → romanised output). Off by
+  // default; enable per deployment. Falls back to "unknown" for English/low
+  // confidence, so it never harms English meetings.
+  SARVAM_AUTO_DETECT_LANGUAGE: booleanFromEnv.default(false),
   // STT model for the Sarvam batch job. "saarika:v2.5" transcribes in the
   // spoken language (native script — the default we want). "saaras:v3" is the
   // translation/codemix model that emits English; set the model+mode env for

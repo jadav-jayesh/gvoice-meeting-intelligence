@@ -12,7 +12,19 @@ export const botQueue = new Queue<BotJobPayload>(env.BOT_QUEUE_NAME, {
 });
 
 export async function enqueueBotSession(sessionId: string): Promise<void> {
-  await botQueue.add("run-bot", { sessionId, kind: "run_bot" }, { jobId: sessionId });
+  await botQueue.add(
+    "run-bot",
+    { sessionId, kind: "run_bot" },
+    {
+      jobId: sessionId,
+      // Retry once on a JOIN failure (e.g. Teams' web app failing to load). The
+      // orchestrator only re-throws for PRE-recording failures, so a meeting that
+      // already started recording is never re-joined / double-recorded. Per-job
+      // (not defaultJobOptions) so calendar-join / transcript-poll are unaffected.
+      attempts: 2,
+      backoff: { type: "fixed", delay: 20000 }
+    }
+  );
 }
 
 // Schedules an auto-join for a calendar event. The jobId is keyed on the

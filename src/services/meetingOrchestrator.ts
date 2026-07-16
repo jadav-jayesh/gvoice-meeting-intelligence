@@ -72,6 +72,10 @@ export class MeetingOrchestrator {
     let mediaDuration = 0;
     let captureCancelled = false;
     let capturePromise: Promise<void> | undefined;
+    // Gate for the job-level retry: only pre-recording (join) failures are re-thrown
+    // to BullMQ so it retries; once recording starts a retry could re-join a meeting
+    // that is already over, so those failures are swallowed after being marked failed.
+    let recordingStarted = false;
     let sessionProfileDir: string | undefined;
     let perSessionSink: PerSessionSink | undefined;
 
@@ -136,6 +140,7 @@ export class MeetingOrchestrator {
         () => captureCancelled
       );
       await this.update(session, { status: "recording", startedAt: joinedAt });
+      recordingStarted = true;
       await this.appendLog(session, {
         phase: "recording",
         event: "recording_started",
@@ -1131,7 +1136,10 @@ export class MeetingOrchestrator {
         endedAt,
         errorMessage: error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error)
       });
-      throw error;
+      // Re-throw ONLY for pre-recording (join) failures so BullMQ retries the job
+      // once. Once recording has started, a retry would re-join a meeting that may
+      // be over, so we swallow the error (the session is already marked failed).
+      if (!recordingStarted) throw error;
     } finally {
       // Release the per-session sink and clone regardless of success/failure.
       // Without this, every concurrent bot leaks a PulseAudio module and a

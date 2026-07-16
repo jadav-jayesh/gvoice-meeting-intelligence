@@ -1,8 +1,11 @@
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { SarvamAIClient } from "sarvamai";
 import { env } from "../config/env";
 import { cfgString } from "../config/runtimeConfig";
+import { extractAudioSegment, probeDurationSeconds } from "../media/ffmpeg";
+import { AzureOpenAIClient } from "../ai/azureOpenAI";
 import type { DiarizedTranscriptSegment } from "../types/meeting";
 import type { Transcriber, TranscriptionResult } from "./types";
 import { logger } from "../utils/logger";
@@ -58,19 +61,24 @@ interface SarvamJobEntry {
 
 export class SarvamTranscriber implements Transcriber {
   async transcribe(audioPath: string): Promise<TranscriptionResult> {
+    const languageCode = await this.resolveLanguageCode(audioPath);
+    return this.runSarvam(audioPath, languageCode);
+  }
+
+  private async runSarvam(audioPath: string, languageCode: string): Promise<TranscriptionResult> {
     const apiKey = cfgString("SARVAM_API_KEY");
     if (!apiKey) {
       throw new Error("Sarvam diarization is not configured. Set SARVAM_API_KEY.");
     }
 
     if (!env.SARVAM_DIARIZATION_URL) {
-      return this.transcribeWithSdk(audioPath);
+      return this.transcribeWithSdk(audioPath, languageCode);
     }
 
     const fileBuffer = await readFile(audioPath);
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(fileBuffer)], { type: "audio/wav" }), "audio.wav");
-    form.append("language_code", env.SARVAM_LANGUAGE_CODE);
+    form.append("language_code", languageCode);
     form.append("diarization", "true");
     form.append("timestamps", "true");
 
@@ -99,7 +107,78 @@ export class SarvamTranscriber implements Transcriber {
     };
   }
 
-  private async transcribeWithSdk(audioPath: string): Promise<TranscriptionResult> {
+  // Resolve which language to transcribe in. An explicitly-configured language
+  // always wins. With "unknown" + auto-detect enabled, detect the REAL spoken
+  // language from a short sample; anything English or low-confidence falls back
+  // to "unknown" (Sarvam's own default), so English meetings are never affected.
+  private async resolveLanguageCode(audioPath: string): Promise<string> {
+    const configured = cfgString("SARVAM_LANGUAGE_CODE") ?? env.SARVAM_LANGUAGE_CODE;
+    if (configured && configured !== "unknown") return configured;
+    if (!env.SARVAM_AUTO_DETECT_LANGUAGE) return "unknown";
+    try {
+      const detected = await this.detectSpokenLanguage(audioPath);
+      if (detected) {
+        logger.info({ detectedLanguage: detected }, "sarvam: auto-detected spoken language for native-script transcription");
+        return detected;
+      }
+    } catch (error) {
+      logger.warn({ err: error }, "sarvam language auto-detect failed; falling back to unknown");
+    }
+    return "unknown";
+  }
+
+  // Detect the dominant spoken language from a short speech sample. Transcribes
+  // the sample with Sarvam's default detector (fast; may romanise), then asks the
+  // chat model to identify the real language — LLMs read romanised Gujarati/Hindi
+  // reliably, which is exactly what Sarvam's audio detector misses on code-mix.
+  // Returns a Sarvam code (e.g. "gu-IN") for confident (romanised) Indic speech,
+  // or null (→ keep "unknown") for English / low confidence.
+  private async detectSpokenLanguage(audioPath: string): Promise<string | null> {
+    const duration = await probeDurationSeconds(audioPath).catch(() => 0);
+    const start = duration > 90 ? 20 : 0;
+    const end = start + Math.min(60, Math.max(15, (duration || 60) - start));
+    const samplePath = path.join(os.tmpdir(), `sarvam-langprobe-${path.basename(audioPath, path.extname(audioPath))}.wav`);
+
+    let sampleText = "";
+    if (await extractAudioSegment(audioPath, start, end, samplePath).catch(() => false)) {
+      const sample = await this.runSarvam(samplePath, "unknown").catch(() => null);
+      sampleText = sample?.text?.trim() ?? "";
+      await unlink(samplePath).catch(() => undefined);
+    }
+    if (!sampleText) return null;
+
+    const result = await new AzureOpenAIClient().chatJson<{
+      language_code?: string;
+      romanized_indic?: boolean;
+      confident?: boolean;
+    }>(
+      [
+        {
+          role: "system",
+          content:
+            "You identify the dominant SPOKEN language of a meeting transcript snippet. The text may be an Indian language written in Latin letters (romanised Gujarati/Hindi/etc.), English, or code-mixed. Return the correct Sarvam language code."
+        },
+        {
+          role: "user",
+          content:
+            `Snippet:\n"""${sampleText.slice(0, 1500)}"""\n\n` +
+            'Reply with JSON only: {"language_code":"<one of gu-IN|hi-IN|mr-IN|bn-IN|ta-IN|te-IN|kn-IN|ml-IN|pa-IN|od-IN|en-IN|unknown>","romanized_indic":<true|false>,"confident":<true|false>}'
+        }
+      ],
+      "sarvam-language-detect",
+      { maxCompletionTokens: 200 }
+    );
+
+    const code = (result?.language_code ?? "").trim();
+    // Only override when the model is confident it is a (romanised) Indic
+    // language — never for English or uncertain snippets.
+    if (result?.confident && result?.romanized_indic && /^[a-z]{2}-IN$/i.test(code) && code.toLowerCase() !== "en-in") {
+      return code;
+    }
+    return null;
+  }
+
+  private async transcribeWithSdk(audioPath: string, languageCode: string = env.SARVAM_LANGUAGE_CODE): Promise<TranscriptionResult> {
     const client = new SarvamAIClient({
       apiSubscriptionKey: cfgString("SARVAM_API_KEY") as string
     });
@@ -116,7 +195,7 @@ export class SarvamTranscriber implements Transcriber {
             // when explicitly configured.
             model: env.SARVAM_STT_MODEL,
             ...(env.SARVAM_STT_MODE ? { mode: env.SARVAM_STT_MODE } : {}),
-            language_code: env.SARVAM_LANGUAGE_CODE as "unknown",
+            language_code: languageCode as "unknown",
             with_diarization: true,
             with_timestamps: true
           } as Parameters<typeof client.speechToTextJob.initialise>[0]["job_parameters"]

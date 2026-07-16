@@ -102,16 +102,6 @@ function AccountDeletedToast() {
 
 /* ════════════════════════ Motion primitives ════════════════════════ */
 
-function Floating({ depth = 26, delay = 0, duration = 7, className, style, children }: { depth?: number; delay?: number; duration?: number; className?: string; style?: CSSProperties; children: ReactNode }) {
-  return (
-    <div className={`gv-parallax absolute ${className ?? ""}`} style={{ ["--depth" as string]: `${depth}px`, ...style }}>
-      <div className="gv-floaty" style={{ animationDelay: `${delay}s`, animationDuration: `${duration}s` }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function TiltCard({ children, className, max = 6 }: { children: ReactNode; className?: string; max?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const reset = () => {
@@ -444,174 +434,113 @@ function Hero({ onWatchDemo }: { onWatchDemo: () => void }) {
         </div>
 
         <Reveal className="relative z-10">
-          <HeroPipeline />
+          <HeroWaveform />
         </Reveal>
       </div>
     </section>
   );
 }
 
-// The hero showpiece: a meeting intelligence pipeline of glass cards connected
-// by animated gradient lines, with floating chips and mouse parallax.
-// Native design size of the collage; the mobile/tablet copy is uniformly scaled
-// down to whatever column width is available.
-const HERO_COLLAGE_W = 620;
-const HERO_COLLAGE_H = 570.4; // 620 * 4.6/5
+// The hero showpiece: "Voice → Signal". A living audio waveform (the meeting
+// being spoken) that resolves, top-to-bottom, into a transcript caption and then
+// a single structured decision — the product's whole promise as one motion.
+// Pure CSS/SVG, all transform/opacity, reduced-motion safe.
 
-function HeroPipeline() {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+// A speech-amplitude envelope so the bars read as a human voice, not a flat
+// equalizer: a soft bell across the width modulated by a little detail. Fully
+// deterministic (Math.random is unavailable in some build paths).
+function waveHeight(i: number, n: number) {
+  const x = i / (n - 1); // 0..1 across the wave
+  // Envelope: quick fade-in, a full plateau across the middle, gentle fade-out —
+  // like a real audio clip. (2.2× sin clamps to 1 for most of the width.)
+  const env = Math.min(1, 2.2 * Math.sin(Math.PI * x));
+  // Layered syllable detail — a few frequencies stacked give organic, speech-like
+  // spikes rather than a smooth curve.
+  const d =
+    0.55 * Math.abs(Math.sin(x * 33 + 0.6)) +
+    0.28 * Math.abs(Math.sin(x * 71 + 2.3)) +
+    0.17 * Math.abs(Math.sin(x * 128 + 4.1));
+  // Deterministic jitter (no Math.random) so no two neighbours match exactly.
+  const jitter = ((Math.sin(i * 91.17) * 4193.13) % 1 + 1) % 1;
+  const amp = Math.min(1, (0.34 + 0.66 * d) * (0.85 + 0.3 * jitter));
+  return Math.max(6, Math.min(100, Math.round(env * amp * 94 + 6)));
+}
 
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    // Scale the fixed-size collage to exactly fill the available width (never
-    // upscaling past 1×). A pure ratio → the floating cards keep their relative
-    // positions and can't overlap, so the desktop look survives at every size.
-    const ro = new ResizeObserver(() => setScale(Math.min(1, el.clientWidth / HERO_COLLAGE_W)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
+function HeroWaveform() {
+  const BARS = 88;
   return (
-    <div className="relative w-full">
-      {/* Below lg: the SAME floating collage, uniformly scaled to fit — keeps the
-          premium desktop look (full-size on tablets, a crisp mini-collage on
-          phones) with no overlap. The wrapper's aspect ratio reserves exactly
-          the scaled height. */}
+    <div className="relative mx-auto w-full max-w-[540px]">
+      {/* Ambient anchor behind the console */}
+      <div aria-hidden className="gv-cglow pointer-events-none absolute left-1/2 top-[40%] h-[62%] w-[88%] -translate-x-1/2 -translate-y-1/2 rounded-[46%]" />
+
+      {/* ── Live-capture console: the "input" surface (status · voice · caption) ── */}
+      <div className="gv-ring gv-glow relative overflow-hidden rounded-[26px] border border-[var(--gv-glass-line)] bg-[var(--gv-glass)] px-5 py-6 sm:px-7">
+        {/* accent hairline along the top edge */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[var(--gv-accent)] to-transparent opacity-60" />
+
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--gv-text2)]">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--gv-accent)] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--gv-accent)]" />
+            </span>
+            Listening · Q3 Roadmap Sync
+          </span>
+          <span className="inline-flex items-center gap-2.5">
+            <span aria-hidden className="gv-eq">
+              <i style={{ animationDelay: "0s" }} /><i style={{ animationDelay: ".18s" }} /><i style={{ animationDelay: ".36s" }} /><i style={{ animationDelay: ".12s" }} />
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-[var(--gv-text2)]">00:42</span>
+          </span>
+        </div>
+
+        {/* The voice */}
+        <div className="gv-wave relative mt-5 flex h-[128px] items-center justify-center gap-[2px] sm:h-[156px]">
+          <span aria-hidden className="pointer-events-none absolute inset-x-1 top-1/2 h-px -translate-y-1/2 bg-[var(--gv-accent)]/18" />
+          {Array.from({ length: BARS }).map((_, i) => (
+            <i
+              key={i}
+              className="gv-bar block w-[2px] rounded-full sm:w-[2.5px]"
+              style={{
+                height: `${waveHeight(i, BARS)}%`,
+                animationDelay: `${(i % 18) * 0.05}s`,
+                animationDuration: `${1.4 + (i % 5) * 0.12}s`
+              }}
+            />
+          ))}
+        </div>
+
+        {/* live transcript caption */}
+        <div className="mt-5 border-t border-[var(--gv-glass-line)] pt-4 text-center">
+          <p className="text-[15px] font-medium leading-snug sm:text-[17.5px]">
+            <span
+              className="gv-type gv-caret inline-block bg-gradient-to-r from-[#A5F3FC] via-[#22D3EE] to-[#67E8F9] bg-clip-text text-transparent"
+              style={{ animationDelay: ".7s" }}
+            >
+              &ldquo;Ship the beta Thursday.&rdquo;
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* connector beam: input → output */}
+      <div className="relative flex justify-center">
+        <span aria-hidden className="h-7 w-px bg-gradient-to-b from-[var(--gv-accent)] to-transparent opacity-60" />
+      </div>
+
+      {/* ── The OUTPUT: a structured decision that dropped out of the meeting ── */}
       <div
-        ref={wrapRef}
-        className="relative mx-auto w-full max-w-[620px] lg:hidden"
-        style={{ aspectRatio: "5 / 4.6" }}
+        className="gv-checkin gv-glow relative mx-auto -mt-1 flex w-fit max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-2xl border border-[var(--gv-glass-line)] bg-[var(--gv-surface)] px-4 py-2.5"
+        style={{ animationDelay: "1.9s" }}
       >
-        <div
-          className="absolute left-0 top-0"
-          style={{ width: HERO_COLLAGE_W, height: HERO_COLLAGE_H, transformOrigin: "top left", transform: `scale(${scale})` }}
-        >
-          <HeroCollage gradientId="gv-line-mobile" />
-        </div>
-      </div>
-
-      {/* lg+: the original collage, unscaled — desktop look unchanged. */}
-      <div className="relative mx-auto hidden aspect-[5/4.6] w-full max-w-[620px] lg:block">
-        <HeroCollage gradientId="gv-line-desktop" />
-      </div>
-    </div>
-  );
-}
-
-// The floating meeting-intelligence collage: animated gradient connectors +
-// parallax glass cards. Rendered at its native 620px design size and either
-// shown 1:1 (desktop) or scaled to fit (mobile/tablet) by HeroPipeline.
-function HeroCollage({ gradientId }: { gradientId: string }) {
-  return (
-    <>
-      {/* animated connectors. gradientId is unique per instance — the desktop and
-          mobile collages both mount, and a shared id would make the visible SVG
-          reference the hidden one's (display:none) gradient, blanking the lines. */}
-      <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 460" fill="none" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#06B6D4" />
-            <stop offset="50%" stopColor="#22D3EE" />
-            <stop offset="100%" stopColor="#0E7490" />
-          </linearGradient>
-        </defs>
-        {["M120 96 C 200 96, 230 150, 250 192", "M250 246 C 250 290, 180 300, 132 320", "M250 246 C 250 290, 330 300, 372 320"].map((d, i) => (
-          <path key={i} d={d} stroke={`url(#${gradientId})`} strokeWidth="1.5" strokeDasharray="5 6" className="gv-flow" style={{ animationDelay: `${i * 0.4}s` }} opacity="0.6" />
-        ))}
-      </svg>
-
-      <Floating depth={18} className="left-[11%] top-[24%] w-[78%]"><HeroMeetingCard /></Floating>
-      <Floating depth={40} delay={0.6} className="left-[2%] top-[8%]"><HeroSpeakerChip /></Floating>
-      <Floating depth={52} delay={1.1} duration={8} className="right-[0%] top-[26%]"><HeroSentimentChip /></Floating>
-      <Floating depth={44} delay={1.6} className="bottom-[6%] left-[2%]"><HeroActionItemsChip /></Floating>
-      <Floating depth={34} delay={0.9} duration={7.5} className="bottom-[8%] right-[2%]"><HeroReportChip /></Floating>
-    </>
-  );
-}
-
-// Hero collage cards, shared by the desktop floating layout and the mobile
-// stacked layout so the two never drift apart.
-function HeroMeetingCard() {
-  return (
-    <Glass ring className="gv-glow p-4">
-      <div className="flex items-center gap-2 border-b border-[rgb(var(--gv-fg)_/_0.1)] pb-3">
-        <span className="grid h-7 w-7 place-items-center rounded-md gv-grad text-white"><Icon.Video size={14} /></span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[12.5px] font-semibold">Q3 Roadmap Sync</p>
-          <p className="text-[10.5px] text-[rgb(var(--gv-fg)_/_0.45)]">Google Meet · live</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#06B6D4]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--gv-accent)]">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#06B6D4]" /> REC
+        <span className="inline-flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-full gv-grad text-white"><Icon.Check size={13} /></span>
+          <span className="text-[12.5px] font-semibold">Decision</span>
         </span>
-      </div>
-      <div className="mt-3 space-y-2.5">
-        <HeroLine initials="MR" name="Maya R." text="Let's lock the launch for September 14." tone="from-[#06B6D4] to-[#22D3EE]" />
-        <HeroLine initials="JK" name="Jordan K." text="Engineering can open the beta gate Thursday." tone="from-[#0E7490] to-[#0E7490]" />
-        <HeroLine ai initials="AI" name="gVoice" text="Decision detected · 2 action items captured" tone="from-[#06B6D4] to-[#0E7490]" />
-      </div>
-    </Glass>
-  );
-}
-
-function HeroSpeakerChip() {
-  return (
-    <Glass className="flex h-full items-center gap-2.5 px-3.5 py-2.5">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#06B6D4]/15 text-[var(--gv-accent)]"><Icon.Users size={15} /></span>
-      <div className="min-w-0">
-        <p className="text-[11.5px] font-semibold leading-tight">Speaker identified</p>
-        <p className="truncate text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Maya R. · 98% match</p>
-      </div>
-    </Glass>
-  );
-}
-
-function HeroSentimentChip() {
-  return (
-    <Glass className="flex h-full items-center gap-3 px-3.5 py-2.5">
-      <svg width="30" height="30" viewBox="0 0 36 36" className="-rotate-90 shrink-0">
-        <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
-        <circle cx="18" cy="18" r="15" fill="none" stroke="#06B6D4" strokeWidth="3" strokeLinecap="round" strokeDasharray="94" strokeDashoffset="9" />
-      </svg>
-      <div>
-        <p className="text-[12.5px] font-semibold leading-tight">92%</p>
-        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">Positive</p>
-      </div>
-    </Glass>
-  );
-}
-
-function HeroActionItemsChip() {
-  return (
-    <Glass className="h-full px-3.5 py-3">
-      <p className="mb-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--gv-fg)_/_0.4)]"><Icon.CheckCircle size={11} className="text-[var(--gv-accent)]" /> Action items</p>
-      {["Ship brief — Maya", "Open beta gate — Jordan"].map((t) => (
-        <p key={t} className="flex items-center gap-1.5 text-[11px] text-[rgb(var(--gv-fg)_/_0.75)]"><Icon.Check size={10} className="shrink-0 text-[var(--gv-accent)]" /> {t}</p>
-      ))}
-    </Glass>
-  );
-}
-
-function HeroReportChip() {
-  return (
-    <Glass className="flex h-full items-center gap-2.5 px-3.5 py-2.5">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gv-grad text-white"><Icon.Download size={14} /></span>
-      <div className="min-w-0">
-        <p className="text-[11.5px] font-semibold leading-tight">Report ready</p>
-        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.45)]">in 1m 48s</p>
-      </div>
-    </Glass>
-  );
-}
-
-function HeroLine({ initials, name, text, tone, ai }: { initials: string; name: string; text: string; tone: string; ai?: boolean }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gradient-to-br text-[9px] font-semibold text-white ${tone}`}>{initials}</span>
-      <div className="min-w-0">
-        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.4)]">{name}</p>
-        <p className={`text-[11.5px] leading-snug ${ai ? "font-medium text-[var(--gv-accent)]" : "text-[rgb(var(--gv-fg)_/_0.8)]"}`}>{text}</p>
+        <span aria-hidden className="h-4 w-px bg-[var(--gv-glass-line)]" />
+        <span className="text-[12px] text-[var(--gv-text2)]">Owner <b className="font-semibold text-[rgb(var(--gv-fg))]">Jordan</b></span>
+        <span aria-hidden className="h-4 w-px bg-[var(--gv-glass-line)]" />
+        <span className="text-[12px] text-[var(--gv-text2)]">Due <b className="font-semibold text-[rgb(var(--gv-fg))]">Thu</b></span>
       </div>
     </div>
   );
@@ -750,6 +679,19 @@ function FeatureRow({ id, eyebrow, title, desc, features, visual, reverse }: { i
         </div>
       </div>
     </Reveal>
+  );
+}
+
+// A single speaker-attributed transcript line, used by the feature showcase.
+function HeroLine({ initials, name, text, tone, ai }: { initials: string; name: string; text: string; tone: string; ai?: boolean }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gradient-to-br text-[9px] font-semibold text-white ${tone}`}>{initials}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] text-[rgb(var(--gv-fg)_/_0.4)]">{name}</p>
+        <p className={`text-[11.5px] leading-snug ${ai ? "font-medium text-[var(--gv-accent)]" : "text-[rgb(var(--gv-fg)_/_0.8)]"}`}>{text}</p>
+      </div>
+    </div>
   );
 }
 
@@ -1488,6 +1430,38 @@ function GVStyles() {
       .gv-sheen { background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.5) 50%, transparent 70%); background-size: 220% 100%; animation: gvSheen 4.5s ease-in-out infinite; }
       @keyframes gvSheen { 0%,60% { background-position: 150% 0; } 100% { background-position: -50% 0; } }
 
+      /* ── Living-console hero motion (all transform/opacity/clip — no layout) ── */
+      /* Live equalizer bars */
+      .gv-eq { display:inline-flex; align-items:flex-end; gap:2px; height:14px; }
+      .gv-eq > i { display:block; width:2.5px; height:100%; border-radius:2px; background:var(--gv-accent); transform-origin:bottom; animation: gvEq 1.05s ease-in-out infinite; }
+      @keyframes gvEq { 0%,100% { transform: scaleY(.3); opacity:.6 } 50% { transform: scaleY(1); opacity:1 } }
+      /* Live-typing transcript reveal + blinking caret */
+      .gv-type { clip-path: inset(0 101% 0 0); animation: gvType 1s cubic-bezier(.4,0,.2,1) forwards; }
+      @keyframes gvType { to { clip-path: inset(0 0 0 0); } }
+      .gv-caret { position:relative; }
+      .gv-caret::after { content:""; display:inline-block; width:2px; height:1em; margin-left:2px; vertical-align:-2px; background:var(--gv-accent); animation: gvBlink 1.05s steps(1) infinite; }
+      @keyframes gvBlink { 0%,50% { opacity:1 } 51%,100% { opacity:0 } }
+      /* Report progress fill + travelling shimmer */
+      .gv-prog { transform-origin:left; animation: gvProg 2.6s cubic-bezier(.22,1,.36,1) .5s both; }
+      @keyframes gvProg { from { transform: scaleX(.04) } to { transform: scaleX(1) } }
+      /* Console aura — static conic ring with a gentle opacity breathe (no rotate) */
+      .gv-cglow { background: conic-gradient(from 120deg, rgba(6,182,212,.0), rgba(34,211,238,.28), rgba(6,182,212,.0) 45%, rgba(14,116,144,.22), rgba(6,182,212,0)); filter: blur(26px); animation: gvBreathe 6s ease-in-out infinite; }
+      @keyframes gvBreathe { 0%,100% { opacity:.45; transform: scale(1) } 50% { opacity:.8; transform: scale(1.05) } }
+      /* One-shot ring/arc draw */
+      @keyframes gvDraw { from { stroke-dashoffset: var(--from) } to { stroke-dashoffset: var(--to) } }
+      .gv-draw { animation: gvDraw 1.4s cubic-bezier(.22,1,.36,1) .3s both; }
+      /* Staggered check-in for list items */
+      .gv-checkin { opacity:0; animation: gvPop .5s cubic-bezier(.22,1,.36,1) forwards; }
+      /* Travelling data pulse along a connector (CSS offset-path fallback handled inline via SMIL) */
+      .gv-pulse { animation: gvPulseGlow 1.8s ease-in-out infinite; }
+      @keyframes gvPulseGlow { 0%,100% { opacity:.35 } 50% { opacity:1 } }
+      /* Voice waveform — bars pulse from their centre in a travelling wave, with a
+         soft aqua glow so the whole thing reads as living sound. */
+      .gv-wave { filter: drop-shadow(0 0 12px rgba(34,211,238,0.28)); }
+      /* Brightest along the centre baseline, fading to the tips — a glowing wave. */
+      .gv-wave > .gv-bar { background: linear-gradient(to bottom, #22D3EE 0%, #CFFAFE 50%, #22D3EE 100%); transform-origin: center; opacity: .92; animation: gvBar 1.5s ease-in-out infinite; }
+      @keyframes gvBar { 0%,100% { transform: scaleY(.34) } 50% { transform: scaleY(1) } }
+
       .gv-reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1); }
       .gv-in { opacity: 1; transform: none; }
 
@@ -1501,7 +1475,10 @@ function GVStyles() {
 
       @media (prefers-reduced-motion: reduce) {
         .gv-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
-        .gv-drift, .gv-drift-slow, .gv-floaty, .gv-flow, .gv-sheen, .gv-stagger > * { animation: none !important; opacity: 1 !important; }
+        .gv-drift, .gv-drift-slow, .gv-floaty, .gv-flow, .gv-sheen, .gv-stagger > *,
+        .gv-eq > i, .gv-caret::after, .gv-prog, .gv-cglow, .gv-draw, .gv-checkin, .gv-pulse, .gv-wave > .gv-bar { animation: none !important; opacity: 1 !important; }
+        .gv-type { clip-path: none !important; }
+        .gv-prog { transform: scaleX(1) !important; }
         .gv-parallax { transform: none !important; }
       }
     `}</style>

@@ -2,9 +2,10 @@ import { Router } from "express";
 import { Types } from "mongoose";
 import { z } from "zod";
 import { BotSessionModel } from "../models/BotSession";
+import { UserModel } from "../models/User";
 import { requireAuth } from "../middleware/requireAuth";
 import { requireCsrf } from "../middleware/requireCsrf";
-import { deleteMeetingForUser } from "../services/account/dataDeletion";
+import { deleteMeetingForUser, deleteMeetingAsAdmin } from "../services/account/dataDeletion";
 import { signBlobReadUrl } from "../storage/azureBlobStorage";
 import { botPlatforms, botStatuses } from "../types/meeting";
 
@@ -49,6 +50,24 @@ const listProjection = {
   "sentimentSummary.overall": 1
 } as const;
 
+// Admins can view every meeting, not just their own or ones shared with them.
+// The role is read from the DB per request (same rationale as requireAdmin): the
+// access token lives for days, so reading role from the JWT would let a demoted
+// admin keep global visibility until it expired. A per-request lookup makes
+// promote/demote take effect immediately. Meetings endpoints are low enough
+// volume that the extra indexed _id read is negligible.
+async function isAdmin(userId: string): Promise<boolean> {
+  const user = await UserModel.findById(userId).select("role").lean();
+  return user?.role === "admin";
+}
+
+// The visibility clause for a session query: admins see all sessions (empty
+// clause), everyone else is scoped to sessions they own or that were shared to
+// them (accessUserIds holds both).
+async function accessClause(userId: string): Promise<Record<string, unknown>> {
+  return (await isAdmin(userId)) ? {} : { accessUserIds: userId };
+}
+
 export const meetingsRouter = Router();
 
 meetingsRouter.use(requireAuth);
@@ -56,9 +75,10 @@ meetingsRouter.use(requireAuth);
 meetingsRouter.get("/", async (req, res, next) => {
   try {
     const query = listQuerySchema.parse(req.query);
-    // Visibility = owner OR shared viewer. accessUserIds holds both, so this
-    // single clause covers shared meetings too (and Cosmos can serve the sort).
-    const filter: Record<string, unknown> = { accessUserIds: req.user!.id };
+    // Visibility = owner OR shared viewer (accessUserIds holds both) — or ALL
+    // sessions when the caller is an admin. Cosmos can still serve the sort
+    // since the createdAt index covers both the scoped and the unscoped query.
+    const filter: Record<string, unknown> = await accessClause(req.user!.id);
     if (query.platform) filter.platform = query.platform;
     if (query.status) filter.status = query.status;
     if (query.search) {
@@ -158,7 +178,7 @@ meetingsRouter.get("/:sessionId", async (req, res, next) => {
     // an INCLUSION projection and returns only _id + meetingLogs — stripping
     // every other field, which blanks the detail page in production.
     const session = await BotSessionModel.findOne(
-      { sessionId: req.params.sessionId, accessUserIds: req.user!.id }
+      { sessionId: req.params.sessionId, ...(await accessClause(req.user!.id)) }
     ).lean();
     if (!session) {
       res.status(404).json({ error: "Meeting not found" });
@@ -180,7 +200,7 @@ meetingsRouter.get("/:sessionId", async (req, res, next) => {
 meetingsRouter.get("/:sessionId/recording", async (req, res, next) => {
   try {
     const session = await BotSessionModel.findOne(
-      { sessionId: req.params.sessionId, accessUserIds: req.user!.id },
+      { sessionId: req.params.sessionId, ...(await accessClause(req.user!.id)) },
       { recordingUrl: 1, meetingName: 1, sessionId: 1 }
     ).lean();
     if (!session) {
@@ -239,7 +259,7 @@ meetingsRouter.get("/:sessionId/recording", async (req, res, next) => {
 meetingsRouter.get("/:sessionId/logs", async (req, res, next) => {
   try {
     const session = await BotSessionModel.findOne(
-      { sessionId: req.params.sessionId, accessUserIds: req.user!.id },
+      { sessionId: req.params.sessionId, ...(await accessClause(req.user!.id)) },
       { meetingLogs: 1 }
     ).lean();
     if (!session) {
@@ -257,7 +277,11 @@ meetingsRouter.get("/:sessionId/logs", async (req, res, next) => {
 // recording and document are permanently removed.
 meetingsRouter.delete("/:sessionId", requireCsrf, async (req, res, next) => {
   try {
-    const result = await deleteMeetingForUser(String(req.params.sessionId), req.user!.id);
+    // Admins can delete any meeting (full purge); everyone else only their own.
+    const sessionId = String(req.params.sessionId);
+    const result = (await isAdmin(req.user!.id))
+      ? await deleteMeetingAsAdmin(sessionId)
+      : await deleteMeetingForUser(sessionId, req.user!.id);
     if (result === "not_found") {
       res.status(404).json({ error: "Meeting not found" });
       return;

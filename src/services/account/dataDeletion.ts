@@ -59,6 +59,20 @@ export async function deleteMeetingForUser(sessionId: string, userId: string): P
 }
 
 /**
+ * Admin deletion: permanently purge a meeting by sessionId regardless of who
+ * owns it (admins manage every meeting, not just their own — mirrors the admin
+ * read bypass on the meetings routes). Always a full hard-delete of the document
+ * + blobs, since an admin removing a meeting means removing it outright.
+ */
+export async function deleteMeetingAsAdmin(sessionId: string): Promise<MeetingDeletionResult> {
+  const session = await BotSessionModel.findOne({ sessionId }).select("sessionId").lean();
+  if (!session) return "not_found";
+  await BotSessionModel.deleteOne({ _id: session._id });
+  await purgeMeetingBlobs(sessionId);
+  return "purged";
+}
+
+/**
  * Permanently delete a user account and all associated personal data:
  * sole-owned meetings (+ their blobs), access to shared meetings, calendar
  * connections, refresh tokens and the user record itself.

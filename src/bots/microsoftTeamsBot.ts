@@ -1,6 +1,7 @@
 import { env } from "../config/env";
 import type { CaptionTimelineEntry } from "../types/meeting";
 import { delay } from "../utils/async";
+import { isBotParticipantName } from "../processing/participants";
 import { BaseMeetingBot } from "./baseMeetingBot";
 import type { Logger } from "pino";
 
@@ -20,6 +21,7 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
 
   async join(meetingUrl: string): Promise<Date> {
     await this.gotoMeeting(meetingUrl);
+    await this.ensureTeamsLoaded(meetingUrl);
     await this.handleTeamsWebClientEntry();
     await this.completePreJoinDeviceFlow();
 
@@ -169,12 +171,21 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     // shortcut), retry from inside the capture loop. Cheap when already on.
     await this.ensureCaptionsEnabled().catch(() => undefined);
 
-    const selectorCaptions = await this.readCaptionBlocks([
-      '[data-tid*="caption" i]',
-      '[aria-live="polite"]',
-      '[class*="caption" i]',
-      '[class*="transcript" i]'
-    ]);
+    // Read ONLY the genuine live-caption container. The previous set included
+    // [aria-live="polite"] and [class*="transcript"] which scrape Teams STATUS
+    // announcements ("X left the call", "Leaving…"), roster names and toolbar
+    // labels — those were ingested as fake captions and wrecked speaker
+    // attribution (garbage like "[Vraj] Fireflies.ai Notetaker Vraj"). If none of
+    // these match a future Teams build, the body-text fallback below still
+    // recovers real captions, so narrowing here can't drop genuine speech.
+    const selectorCaptions = (
+      await this.readCaptionBlocks([
+        '[data-tid*="closed-caption" i]',
+        '[data-tid*="caption" i]',
+        '[class*="caption-container" i]',
+        '[class*="captionsContainer" i]'
+      ])
+    ).filter((caption) => !isTeamsCaptionNoise(caption));
     if (selectorCaptions.length > 0) {
       // Captions are flowing — mark as confirmed so we stop retrying.
       this.captionsEnableSucceeded = true;
@@ -182,10 +193,16 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     }
 
     const bodyText = await this.getPage().locator("body").innerText({ timeout: 1000 }).catch(() => "");
-    const bodyCaptions = parseTeamsCaptionText(bodyText, new Date());
+    const bodyCaptions = parseTeamsCaptionText(bodyText, new Date()).filter((caption) => !isTeamsCaptionNoise(caption));
     if (bodyCaptions.length > 0) this.captionsEnableSucceeded = true;
     return bodyCaptions;
   }
+
+  // Consecutive checks where a hang-up control is present but the meeting-STAGE
+  // toolbar is not (the call is minimized off the stage). At ~30 checks ×
+  // CAPTURE_INTERVAL_MS (2s) this is ≈60s of sustained off-stage before we act.
+  private missedStageChecks = 0;
+  private static readonly STAGE_MISSING_LIMIT = 30;
 
   async hasMeetingEnded(): Promise<boolean> {
     if (this.getPage().isClosed()) return true;
@@ -203,7 +220,37 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     if (!(await this.isRoleButtonVisibleAcrossFrames(/leave|hang up/i, 400))) {
       await this.wakeMeetingControls();
     }
-    return this.leaveControlMissingForSeveralChecks(/leave|hang up/i, 8);
+    if (await this.leaveControlMissingForSeveralChecks(/leave|hang up/i, 8)) return true;
+
+    // Navigate-away guard (minimized-call detection). When the client leaves the
+    // meeting STAGE (e.g. Teams routes back to the Chat/home shell), the call
+    // frequently survives as a minimized bar: a hang-up control lingers — so the
+    // Leave-gone check above never trips — and none of the "meeting ended" body
+    // text appears. The bot then records the idle home screen until the hard cap
+    // (this produced a ~4h empty recording). The full meeting-stage toolbar
+    // (React / Raise hand / Share content) exists ONLY on the stage — never in the
+    // minimized bar or the home shell. Controls were just woken above, so a merely
+    // auto-hidden toolbar is revealed; only the specific "hang-up present BUT stage
+    // toolbar absent" signature accumulates, and only after a long sustained window
+    // — so a normal (on-stage) meeting can never trip this.
+    const leaveVisible = await this.isRoleButtonVisibleAcrossFrames(/leave|hang up/i, 300);
+    const stageVisible = await this.isRoleButtonVisibleAcrossFrames(
+      /reactions?|raise (?:your )?hand|\breact\b|share content/i,
+      300
+    );
+    if (leaveVisible && !stageVisible) {
+      this.missedStageChecks += 1;
+      if (this.missedStageChecks >= MicrosoftTeamsBot.STAGE_MISSING_LIMIT) {
+        this.logger.warn(
+          { missedStageChecks: this.missedStageChecks },
+          "teams: hang-up present but meeting-stage toolbar gone for a sustained window — call minimized off-stage, treating meeting as ended"
+        );
+        return true;
+      }
+    } else {
+      this.missedStageChecks = 0;
+    }
+    return false;
   }
 
   // Reveal Teams' auto-hidden meeting toolbar by moving the pointer over the
@@ -352,6 +399,32 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     );
 
     this.logger.info("teams pre-join microphone and camera off verified/requested");
+  }
+
+  // Recover from Teams' hard web-app load failure ("Oops — app failed to load!").
+  // Without this the entry/pre-join loops spin on a dead error page until the join
+  // times out and the whole meeting is silently missed (observed in prod). Click
+  // Teams' own "Retry" button (NEVER "Clear cache and retry" — that wipes the
+  // bot's signed-in Teams session), or reload the meeting URL, until the meeting
+  // UI appears or the small budget is spent.
+  private async ensureTeamsLoaded(meetingUrl: string): Promise<void> {
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      if (!(await this.isTeamsLoadError())) return;
+      this.logger.warn({ attempt }, "teams web app failed to load — recovering (retry/reload)");
+      const clickedRetry = await this.clickRoleButton(/^retry$|^try again$/i, 1000).catch(() => false);
+      if (!clickedRetry) {
+        await this.gotoMeeting(meetingUrl).catch(() => undefined);
+      }
+      await delay(5000);
+    }
+  }
+
+  // True when Teams is showing its own "app failed to load" error screen: the
+  // failure text together with a Retry button (and no meeting/pre-join UI).
+  private async isTeamsLoadError(): Promise<boolean> {
+    const body = await this.getPage().locator("body").innerText({ timeout: 800 }).catch(() => "");
+    if (!/app failed to load|failed to load|something went wrong/i.test(body)) return false;
+    return this.isRoleButtonVisible(/^retry$|^try again$/i, 600);
   }
 
   private async handleTeamsWebClientEntry(): Promise<void> {
@@ -1333,6 +1406,27 @@ function parseTeamsVisibleTileNames(bodyText: string): string[] {
   }
 
   return [...new Set(names)];
+}
+
+// Teams shows status announcements (join/leave, recording notices) in aria-live
+// regions and toolbar/menu labels that can be scraped alongside real captions —
+// which then get ingested as speech and wreck speaker attribution. Drop them.
+// Patterns are anchored so genuine conversational lines survive.
+const TEAMS_UI_LABEL_RE =
+  /^(?:apps|notes|chat|people|react|reactions|raise(?: your)? hand|raise|share|share content|view|more|leave|mute|unmute|camera|mic|settings|help|meeting info|timer|audio settings|language and speech|video effects(?: and settings)?|record and transcribe|recording and transcription|recording and taking notes|participants|copilot|whiteboard|hide captions|turn off live captions)$/i;
+const TEAMS_STATUS_LINE_RE =
+  /^.{0,60}?\b(?:left the (?:call|meeting)|joined the (?:call|meeting)|is leaving|has (?:left|joined)|was (?:admitted|removed|added)|started recording|stopped recording|is presenting|stopped presenting)\b[.\s]*$|^leaving[.\s]*$/i;
+
+function isTeamsCaptionNoise(caption: { speaker?: string; text: string }): boolean {
+  const text = (caption.text || "").trim();
+  if (!text) return true;
+  // Bot/notetaker names captured as the caption text or speaker
+  // (e.g. "Fireflies.ai Notetaker Vraj"), reusing the shared notetaker registry.
+  if (isBotParticipantName(text)) return true;
+  if (caption.speaker && isBotParticipantName(caption.speaker)) return true;
+  if (TEAMS_UI_LABEL_RE.test(text)) return true;
+  if (TEAMS_STATUS_LINE_RE.test(text)) return true;
+  return false;
 }
 
 function parseTeamsCaptionText(bodyText: string, time: Date): Array<Omit<CaptionTimelineEntry, "source">> {

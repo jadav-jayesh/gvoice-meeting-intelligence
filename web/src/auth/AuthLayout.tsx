@@ -22,7 +22,7 @@ export function AuthLayout({ title, subtitle, children, footer }: Props) {
         <ThemeToggle />
       </div>
 
-      <div className="relative z-10 min-h-screen w-full flex flex-col lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
+      <div className="relative z-10 min-h-screen lg:h-screen lg:overflow-hidden w-full flex flex-col lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
         <HeroPanel />
 
         <main className="relative flex flex-1 items-center justify-center px-5 sm:px-8 py-10 lg:py-14 overflow-hidden">

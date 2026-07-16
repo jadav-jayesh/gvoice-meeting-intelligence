@@ -383,32 +383,6 @@ function ProductPreview() {
               <p className="text-[10.5px] text-inkMute">4 decisions · 7 todos</p>
             </div>
           </div>
-
-          <div
-            className="glass-card rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 shadow-pop rotate-[1deg] animate-float-y"
-            style={{ animationDelay: "1.4s" }}
-          >
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-500/20 text-brand-500 dark:text-brand-400 shrink-0">
-              <Icon.Users size={14} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-medium text-ink leading-tight">Speakers identified</p>
-              <p className="text-[10.5px] text-inkMute">5 voices · 98% match</p>
-            </div>
-          </div>
-
-          <div
-            className="glass-card rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 shadow-pop -rotate-[0.75deg] animate-float-y"
-            style={{ animationDelay: "1.7s" }}
-          >
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-500/20 text-brand-500 dark:text-brand-400 shrink-0">
-              <Icon.Mail size={14} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-medium text-ink leading-tight">Report emailed</p>
-              <p className="text-[10.5px] text-inkMute">MoM sent to 6 attendees</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -205,7 +205,7 @@ interface AcceptedMapping {
   tier: "confident" | "soft" | "elimination";
 }
 
-function applyResolverMappings(
+export function applyResolverMappings(
   transcript: DiarizedTranscriptSegment[],
   mappings: ResolverMapping[],
   participantNames: string[],
@@ -246,11 +246,17 @@ function applyResolverMappings(
   const accepted = new Map<string, AcceptedMapping>();
   const usedNames = new Set<string>();
 
-  // A name is already spoken for if it sits on a locked cluster, or on a cluster
-  // the resolver will not touch (no proposal) — either way it can't be reused.
+  // Reserve a name ONLY when it sits on a LOCKED cluster (a high-confidence
+  // deterministic assignment we treat as immovable). A name held merely by a
+  // LOW-confidence deterministic guess is deliberately NOT reserved here, so the
+  // resolver is free to MOVE it to the cluster the conversation content actually
+  // supports. (Previously, any cluster the model didn't propose for ALSO reserved
+  // its current name — which blocked correct high-confidence corrections such as
+  // "cluster 2 opens with 'Hello Jayesh' ⇒ that speaker is Vraj, not Jayesh",
+  // leaving the coin-flip label in place. That was the first-second flip bug.)
   for (const clusterId of clusterOrder) {
     const canonicalCurrent = canonical(currentSpeakerByCluster.get(clusterId) ?? "");
-    if (canonicalCurrent && (lockedClusterIds.has(clusterId) || !bestByCluster.has(clusterId))) {
+    if (canonicalCurrent && lockedClusterIds.has(clusterId)) {
       usedNames.add(canonicalCurrent.toLocaleLowerCase("en-US"));
     }
   }
@@ -284,13 +290,31 @@ function applyResolverMappings(
     claim(proposal.clusterId, proposal.speaker, proposal.confidence, "soft");
   }
 
-  // Tier 3 — elimination: when exactly one cluster is still unnamed and exactly one
-  // participant is still unused, they can only be each other.
-  const finalSpeaker = (clusterId: string): string => accepted.get(clusterId)?.speaker ?? currentSpeakerByCluster.get(clusterId) ?? "";
-  const unnamedClusters = clusterOrder.filter((clusterId) => !canonical(finalSpeaker(clusterId)));
+  // Tier 2.5 — keep the deterministic label on any cluster the resolver did not
+  // override, UNLESS that name was just claimed by a more-confident proposal (i.e.
+  // moved to another cluster). Kept names are reserved so elimination won't reuse
+  // them; a cluster whose name was moved away is left for elimination below.
+  const keptClusters = new Set<string>();
+  for (const clusterId of clusterOrder) {
+    if (accepted.has(clusterId)) continue;
+    const canonicalCurrent = canonical(currentSpeakerByCluster.get(clusterId) ?? "");
+    if (canonicalCurrent && !usedNames.has(canonicalCurrent.toLocaleLowerCase("en-US"))) {
+      usedNames.add(canonicalCurrent.toLocaleLowerCase("en-US"));
+      keptClusters.add(clusterId);
+    }
+  }
+
+  // Tier 3 — elimination: every cluster still without a name (it never had a
+  // canonical one, OR its deterministic name was just moved to a more-confident
+  // cluster) takes a remaining unused participant, in cluster order. This
+  // generalizes the old strict 1:1 case to the 2-party swap (A and B trade names).
+  // Locked clusters keep their current name and are never reassigned.
+  const unnamedClusters = clusterOrder.filter(
+    (clusterId) => !accepted.has(clusterId) && !keptClusters.has(clusterId) && !lockedClusterIds.has(clusterId)
+  );
   const unusedNames = participantNames.filter((name) => !usedNames.has(name.toLocaleLowerCase("en-US")));
-  if (unnamedClusters.length === 1 && unusedNames.length === 1) {
-    claim(unnamedClusters[0], unusedNames[0], hard, "elimination");
+  for (let index = 0; index < unnamedClusters.length && index < unusedNames.length; index += 1) {
+    claim(unnamedClusters[index], unusedNames[index], hard, "elimination");
   }
 
   return {

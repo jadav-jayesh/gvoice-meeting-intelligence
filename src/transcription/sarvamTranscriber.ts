@@ -5,6 +5,7 @@ import { SarvamAIClient } from "sarvamai";
 import { env } from "../config/env";
 import { cfgString } from "../config/runtimeConfig";
 import { extractAudioSegment, probeDurationSeconds } from "../media/ffmpeg";
+import { indicScriptFraction } from "./languageDetection";
 import { AzureOpenAIClient } from "../ai/azureOpenAI";
 import type { DiarizedTranscriptSegment } from "../types/meeting";
 import type { Transcriber, TranscriptionResult } from "./types";
@@ -127,55 +128,83 @@ export class SarvamTranscriber implements Transcriber {
     return "unknown";
   }
 
-  // Detect the dominant spoken language from a short speech sample. Transcribes
-  // the sample with Sarvam's default detector (fast; may romanise), then asks the
-  // chat model to identify the real language — LLMs read romanised Gujarati/Hindi
-  // reliably, which is exactly what Sarvam's audio detector misses on code-mix.
-  // Returns a Sarvam code (e.g. "gu-IN") for confident (romanised) Indic speech,
-  // or null (→ keep "unknown") for English / low confidence.
+  // Detect the dominant spoken language from a short speech sample.
+  //
+  // Sarvam's own auto-detect ("unknown") reliably picks the wrong Indic language
+  // for similar-sounding ones — it transcribed a Gujarati meeting as Marathi and
+  // emitted Devanagari gibberish (prod session 1b0ef421). Reading that text can't
+  // recover the truth (it's valid Marathi script, just nonsense words), so we
+  // instead re-transcribe the sample under each CANDIDATE language and let a model
+  // pick the one that reads as coherent words — the correct language is coherent,
+  // the wrong ones are phonetic gibberish in their own script.
+  //
+  // Gated on the default detector already producing Indic script, so English
+  // meetings pay only the single probe call and keep "unknown".
   private async detectSpokenLanguage(audioPath: string): Promise<string | null> {
     const duration = await probeDurationSeconds(audioPath).catch(() => 0);
     const start = duration > 90 ? 20 : 0;
-    const end = start + Math.min(60, Math.max(15, (duration || 60) - start));
+    const end = start + Math.min(40, Math.max(15, (duration || 40) - start));
     const samplePath = path.join(os.tmpdir(), `sarvam-langprobe-${path.basename(audioPath, path.extname(audioPath))}.wav`);
+    if (!(await extractAudioSegment(audioPath, start, end, samplePath).catch(() => false))) return null;
 
-    let sampleText = "";
-    if (await extractAudioSegment(audioPath, start, end, samplePath).catch(() => false)) {
-      const sample = await this.runSarvam(samplePath, "unknown").catch(() => null);
-      sampleText = sample?.text?.trim() ?? "";
+    try {
+      // Probe once with Sarvam's own detector.
+      const probe = await this.runSarvam(samplePath, "unknown").catch(() => null);
+      const probeText = probe?.text?.trim() ?? "";
+      if (!probeText) return null;
+      // Mostly-Latin ⇒ English/romanised — keep "unknown" (no disambiguation cost).
+      if (indicScriptFraction(probeText) < 0.3) return null;
+
+      // Indic audio, but maybe the wrong Indic language. Build the candidate set:
+      // the configured list plus whatever the probe guessed (deduped, no "unknown").
+      const configured = (cfgString("SARVAM_LANGUAGE_CANDIDATES") ?? env.SARVAM_LANGUAGE_CANDIDATES)
+        .split(",")
+        .map((code) => code.trim())
+        .filter(Boolean);
+      const probeCode = (probe?.language ?? "").trim();
+      const candidates = [...new Set([...configured, ...(probeCode && probeCode !== "unknown" ? [probeCode] : [])])];
+      if (candidates.length === 0) return null;
+
+      // Transcribe the sample under each candidate in parallel.
+      const attempts = (
+        await Promise.all(
+          candidates.map(async (code) => {
+            const result = await this.runSarvam(samplePath, code).catch(() => null);
+            return { code, text: (result?.text ?? "").trim() };
+          })
+        )
+      ).filter((attempt) => attempt.text.length >= 8);
+      if (attempts.length === 0) return null;
+      if (attempts.length === 1) return attempts[0].code.toLowerCase() === "en-in" ? null : attempts[0].code;
+
+      const result = await new AzureOpenAIClient().chatJson<{ language_code?: string; confident?: boolean }>(
+        [
+          {
+            role: "system",
+            content:
+              "You are given the SAME meeting audio transcribed under several candidate languages. Exactly one language is correct — its transcription reads as coherent, meaningful sentences in that language. The others are phonetic gibberish (valid script, nonsensical words). Identify the correct language."
+          },
+          {
+            role: "user",
+            content:
+              "Candidate transcriptions of the same audio:\n\n" +
+              attempts.map((attempt) => `[${attempt.code}]\n${attempt.text.slice(0, 700)}`).join("\n\n") +
+              `\n\nReply with JSON only: {"language_code":"<the correct code from: ${attempts
+                .map((attempt) => attempt.code)
+                .join("|")}|unknown>","confident":<true|false>}`
+          }
+        ],
+        "sarvam-language-detect",
+        { maxCompletionTokens: 200 }
+      );
+
+      const code = (result?.language_code ?? "").trim();
+      const matched = attempts.find((attempt) => attempt.code.toLowerCase() === code.toLowerCase());
+      if (result?.confident && matched && matched.code.toLowerCase() !== "en-in") return matched.code;
+      return null;
+    } finally {
       await unlink(samplePath).catch(() => undefined);
     }
-    if (!sampleText) return null;
-
-    const result = await new AzureOpenAIClient().chatJson<{
-      language_code?: string;
-      romanized_indic?: boolean;
-      confident?: boolean;
-    }>(
-      [
-        {
-          role: "system",
-          content:
-            "You identify the dominant SPOKEN language of a meeting transcript snippet. The text may be an Indian language written in Latin letters (romanised Gujarati/Hindi/etc.), English, or code-mixed. Return the correct Sarvam language code."
-        },
-        {
-          role: "user",
-          content:
-            `Snippet:\n"""${sampleText.slice(0, 1500)}"""\n\n` +
-            'Reply with JSON only: {"language_code":"<one of gu-IN|hi-IN|mr-IN|bn-IN|ta-IN|te-IN|kn-IN|ml-IN|pa-IN|od-IN|en-IN|unknown>","romanized_indic":<true|false>,"confident":<true|false>}'
-        }
-      ],
-      "sarvam-language-detect",
-      { maxCompletionTokens: 200 }
-    );
-
-    const code = (result?.language_code ?? "").trim();
-    // Only override when the model is confident it is a (romanised) Indic
-    // language — never for English or uncertain snippets.
-    if (result?.confident && result?.romanized_indic && /^[a-z]{2}-IN$/i.test(code) && code.toLowerCase() !== "en-in") {
-      return code;
-    }
-    return null;
   }
 
   private async transcribeWithSdk(audioPath: string, languageCode: string = env.SARVAM_LANGUAGE_CODE): Promise<TranscriptionResult> {

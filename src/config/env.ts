@@ -180,6 +180,13 @@ const envSchema = z.object({
   // default; enable per deployment. Falls back to "unknown" for English/low
   // confidence, so it never harms English meetings.
   SARVAM_AUTO_DETECT_LANGUAGE: booleanFromEnv.default(false),
+  // Candidate Sarvam language codes tried during auto-detect disambiguation.
+  // When the default detector produces Indic-script text (so the audio is an
+  // Indian language, but possibly the WRONG one — e.g. Gujarati misread as
+  // Marathi), the sample is transcribed under each candidate and a model picks
+  // the one that reads as coherent words. Comma-separated; the default covers
+  // this deployment's Gujarati/Hindi/Marathi mix.
+  SARVAM_LANGUAGE_CANDIDATES: z.string().default("gu-IN,hi-IN,mr-IN"),
   // STT model for the Sarvam batch job. "saarika:v2.5" transcribes in the
   // spoken language (native script — the default we want). "saaras:v3" is the
   // translation/codemix model that emits English; set the model+mode env for

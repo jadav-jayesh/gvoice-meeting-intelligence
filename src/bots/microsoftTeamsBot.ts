@@ -11,6 +11,7 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
   private static readonly MAX_PANEL_OPEN_ATTEMPTS = 12;
   private lastPanelNames: string[] = [];
   private lastParticipantSnapshotDebug: Record<string, unknown> | undefined;
+  private lastActiveSpeakerDebug: Record<string, unknown> | undefined;
   private captionsEnableAttempted = false;
   private captionsEnableSucceeded = false;
   private captionsRetryBudget = 4;
@@ -41,16 +42,19 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     await this.enforceBrowserFullscreen("teams-meeting-view");
   }
 
-  // Read the display name(s) of the tile(s) Teams is currently highlighting as
-  // the active speaker. Teams draws an animated "voice level" outline around the
-  // speaking participant's tile/avatar; we key on that indicator (plus generic
-  // speaking/active-speaker markers as a fallback across Teams versions), then
-  // read the person's name off the enclosing tile. Language-independent — reads
-  // the tile label, not the audio. Returns [] when nobody is highlighted.
+  // Read the display name(s) of whoever Teams is currently marking as the active
+  // speaker. Two independent signals, both language-independent (they read the
+  // tile/roster LABEL, not the audio):
+  //   1. explicit voice-level / speaking indicator elements on a video tile, and
+  //   2. participant-roster rows flagged as speaking.
+  // When neither yields a name, it records a diagnostic sample of the video-tile
+  // elements + their border/ring styles into lastActiveSpeakerDebug, so a live
+  // meeting's logs reveal the real speaking marker (this is what lets us finalise
+  // the selector without blind guessing). Returns [] when nobody is speaking.
   override async snapshotActiveSpeakers(): Promise<string[]> {
     const page = this.getPage();
     if (page.isClosed()) return [];
-    return page
+    const result = await page
       .evaluate(() => {
         const visible = (element: Element): boolean => {
           const node = element as HTMLElement;
@@ -62,25 +66,29 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
         const looksLikeName = (raw: string): string | null => {
           const text = (raw || "").replace(/\s+/g, " ").trim();
           if (!text) return null;
-          // Strip common Teams tile decorations so the name reads cleanly.
           const stripped = text
-            .replace(/,?\s*(muted|unmuted|speaking|presenting|sharing|camera (on|off)|hand raised|raised hand|organi[sz]er|guest|external)\b.*$/i, "")
-            .replace(/'s (video|content|screen)$/i, "")
+            .replace(
+              /,?\s*(muted|unmuted|speaking|presenting|sharing|camera (on|off)|hand raised|raised hand|organi[sz]er|guest|external|in the lobby|available|busy|away|do not disturb)\b.*$/i,
+              ""
+            )
+            .replace(/['’]s (video|content|screen)$/i, "")
             .replace(/^content from\s+/i, "")
             .trim();
           if (stripped.length < 2 || stripped.length > 80) return null;
           if (/[.!?;:]/.test(stripped)) return null;
           return /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(stripped) ? stripped : null;
         };
+        const indicatorSelector =
+          '[data-tid="voice-level-stream-outline"], [data-tid*="voice-level" i], [data-tid*="voicelevel" i], [data-tid*="active-speaker" i], [data-tid*="activespeaker" i], [data-tid*="speaking" i], [class*="speaking" i], [class*="activeSpeaker" i], [class*="voiceLevel" i], [class*="voice-level" i]';
+        const nameSelectors = [
+          '[data-tid="tile-nameplate"]',
+          '[data-tid*="nameplate" i]',
+          '[data-tid*="displayName" i]',
+          '[data-tid*="display-name" i]',
+          '[data-tid*="participant-name" i]'
+        ];
         const nameFromTile = (tile: Element | null): string | null => {
           if (!tile) return null;
-          const nameSelectors = [
-            '[data-tid="tile-nameplate"]',
-            '[data-tid*="nameplate" i]',
-            '[data-tid*="displayName" i]',
-            '[data-tid*="display-name" i]',
-            '[data-tid*="participant-name" i]'
-          ];
           for (const sel of nameSelectors) {
             const el = tile.querySelector(sel) as HTMLElement | null;
             if (el && visible(el)) {
@@ -89,31 +97,97 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
             }
           }
           const aria = (tile as HTMLElement).getAttribute?.("aria-label");
-          return aria ? looksLikeName(aria) : null;
+          const fromAria = aria ? looksLikeName(aria.split(",")[0]) : null;
+          if (fromAria) return fromAria;
+          const line =
+            ((tile as HTMLElement).innerText || "")
+              .split(/\n+/)
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .slice(-1)[0] ?? "";
+          return looksLikeName(line);
         };
-        const indicatorSelectors = [
-          '[data-tid="voice-level-stream-outline"]',
-          '[data-tid*="voice-level" i]',
-          '[data-tid*="active-speaker" i]',
-          '[data-tid*="speaking" i]',
-          '[class*="speaking" i]',
-          '[class*="activeSpeaker" i]'
-        ];
         const tileSelector =
-          '[data-tid*="participant" i], [data-tid*="stream" i], [data-tid*="tile" i], [data-cid], [role="listitem"], [aria-label]';
+          '[data-tid*="participant" i], [data-tid*="stream" i], [data-tid*="tile" i], [data-cid], [role="treeitem"], [aria-label]';
+
         const names = new Set<string>();
-        for (const sel of indicatorSelectors) {
-          const nodes = Array.from(document.querySelectorAll(sel));
-          for (const node of nodes) {
-            if (!visible(node)) continue;
-            const tile = (node as Element).closest(tileSelector) ?? node.parentElement;
-            const name = nameFromTile(tile) ?? nameFromTile(node);
-            if (name) names.add(name);
+        const debug: Record<string, unknown> = {};
+
+        // Strategy 1 — explicit voice-level / speaking indicator on a tile.
+        const indicators = Array.from(document.querySelectorAll(indicatorSelector)).filter(visible);
+        debug.indicatorCount = indicators.length;
+        const indicatorHits: string[] = [];
+        for (const node of indicators) {
+          const tile = (node as Element).closest(tileSelector) ?? node.parentElement;
+          const name = nameFromTile(tile) ?? nameFromTile(node);
+          if (name) {
+            names.add(name);
+            if (indicatorHits.length < 8) indicatorHits.push(name);
           }
         }
-        return [...names];
+        debug.indicatorHits = indicatorHits;
+
+        // Strategy 2 — roster rows flagged speaking (aria-label says "speaking",
+        // or the row has a voice-level descendant).
+        const rows = Array.from(
+          document.querySelectorAll(
+            '[role="treeitem"], [data-tid*="participant-item" i], [data-tid*="roster-item" i], [data-tid*="people-list-item" i]'
+          )
+        ).filter(visible);
+        debug.rosterRowCount = rows.length;
+        const rosterHits: string[] = [];
+        for (const row of rows) {
+          if (row.getAttribute("aria-expanded") !== null) continue;
+          const label = row.getAttribute("aria-label") || row.getAttribute("title") || "";
+          const child = row.querySelector(indicatorSelector);
+          const speaking = /\bspeaking\b/i.test(label) || (child != null && visible(child));
+          if (!speaking) continue;
+          const name = looksLikeName(label.split(",")[0]);
+          if (name) {
+            names.add(name);
+            if (rosterHits.length < 8) rosterHits.push(label.slice(0, 60));
+          }
+        }
+        debug.rosterHits = rosterHits;
+
+        // Diagnostic — no match: sample the video-tile-like elements and their
+        // border/outline/box-shadow so a live meeting's logs reveal the real
+        // active-speaker marker. First-name labels only; no message content.
+        if (names.size === 0) {
+          const samples: Array<Record<string, unknown>> = [];
+          const candidates = (Array.from(document.querySelectorAll("[aria-label]")) as HTMLElement[])
+            .filter(visible)
+            .filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.width >= 140 && rect.height >= 100;
+            })
+            .slice(0, 10);
+          for (const el of candidates) {
+            const style = window.getComputedStyle(el);
+            samples.push({
+              aria: (el.getAttribute("aria-label") || "").slice(0, 50),
+              dataTid: el.getAttribute("data-tid")?.slice(0, 50),
+              cls: (el.className || "").toString().slice(0, 60),
+              borderColor: style.borderColor,
+              borderWidth: style.borderWidth,
+              outlineColor: style.outlineColor,
+              boxShadow: style.boxShadow.slice(0, 60),
+              hasVoiceChild: Boolean(el.querySelector(indicatorSelector))
+            });
+          }
+          debug.tileSamples = samples;
+        }
+
+        return { names: [...names], debug };
       })
-      .catch(() => []);
+      .catch((error) => ({ names: [] as string[], debug: { error: String(error).slice(0, 160) } }));
+
+    this.lastActiveSpeakerDebug = result.debug;
+    return result.names;
+  }
+
+  getLastActiveSpeakerDebug(): Record<string, unknown> | undefined {
+    return this.lastActiveSpeakerDebug;
   }
 
   async snapshotParticipants(): Promise<string[]> {

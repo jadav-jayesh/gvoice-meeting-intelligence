@@ -433,7 +433,11 @@ function applyActiveSpeakerMapping(
     const decision: MappingDecision = {
       cluster: clusterKey,
       mappedSpeaker: topName,
-      confidence: Math.min(0.97, 0.85 + fraction * 0.12),
+      // Strong evidence, but capped just below the LLM resolver's lock threshold
+      // (0.95) on purpose: active-speaker capture is newly enabled, so until it's
+      // validated on live meetings the proven content-based resolver keeps the
+      // final say and can override a mis-read highlight. Raise once trusted.
+      confidence: Math.min(0.9, 0.78 + fraction * 0.12),
       reason: `active-speaker overlap (${topOverlap.toFixed(1)}s, ${(fraction * 100).toFixed(0)}% of cluster)`
     };
     decisions.set(clusterKey, decision);

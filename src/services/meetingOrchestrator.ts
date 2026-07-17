@@ -1662,6 +1662,7 @@ export class MeetingOrchestrator {
     const startedAt = Date.now();
     let panelNamesEverFound = false;
     let lastParticipantSnapshotAt = 0;
+    let lastActiveSpeakerLogAt = 0;
     let lastMongoFlushAt = 0;
     let aloneSinceMs: number | null = null;
     let everSawOtherParticipant = false;
@@ -1715,6 +1716,20 @@ export class MeetingOrchestrator {
         });
         if (activeSpeakers.length > 0) {
           activeSpeakerTracker.observe(activeSpeakers, new Date());
+        }
+        // Periodically surface the active-speaker capture state (names seen + the
+        // DOM diagnostic when none matched) so a live meeting's logs let us
+        // confirm/refine the Teams speaking-indicator selectors without guessing.
+        if (Date.now() - lastActiveSpeakerLogAt >= 30000) {
+          lastActiveSpeakerLogAt = Date.now();
+          logger.info(
+            {
+              activeSpeakers,
+              totalActiveSpeakerSamples: activeSpeakerTracker.size(),
+              activeSpeakerDebug: getActiveSpeakerDebug(bot)
+            },
+            "active-speaker capture status"
+          );
         }
       }
 
@@ -1937,6 +1952,11 @@ function validatedDiarizationParticipants(segments: DiarizedTranscriptSegment[])
 function getParticipantSnapshotDebug(bot: ReturnType<typeof createMeetingBot>): Record<string, unknown> | undefined {
   const maybeDebuggable = bot as { getLastParticipantSnapshotDebug?: () => Record<string, unknown> | undefined };
   return maybeDebuggable.getLastParticipantSnapshotDebug?.();
+}
+
+function getActiveSpeakerDebug(bot: ReturnType<typeof createMeetingBot>): Record<string, unknown> | undefined {
+  const maybeDebuggable = bot as { getLastActiveSpeakerDebug?: () => Record<string, unknown> | undefined };
+  return maybeDebuggable.getLastActiveSpeakerDebug?.();
 }
 
 function teamsTranscriptRetryDelayMs(retryCount: number): number {

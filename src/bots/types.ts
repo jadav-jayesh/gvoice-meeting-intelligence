@@ -23,6 +23,11 @@ export interface MeetingBot {
   prepareMeetingView(): Promise<void>;
   snapshotParticipants(): Promise<string[]>;
   snapshotCaptions(): Promise<Array<Omit<CaptionTimelineEntry, "source">>>;
+  // Display name(s) the meeting UI is currently highlighting as the active
+  // speaker (speaking ring / highlighted tile). Best-effort and language-
+  // independent; returns [] when no active-speaker signal is exposed. Bots that
+  // can't read it inherit the base no-op.
+  snapshotActiveSpeakers(): Promise<string[]>;
   hasMeetingEnded(): Promise<boolean>;
   dismissOverlays(): Promise<void>;
   leaveMeeting(): Promise<boolean>;

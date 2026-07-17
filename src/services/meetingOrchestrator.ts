@@ -3,6 +3,7 @@ import { cfgNumber, hydrateRuntimeConfig } from "../config/runtimeConfig";
 import { BotSessionModel } from "../models/BotSession";
 import { createMeetingBot } from "../bots/botFactory";
 import { CaptionTracker } from "../capture/captionTracker";
+import { ActiveSpeakerTracker, buildActiveSpeakerSpans } from "../capture/activeSpeakerTracker";
 import {
   ParticipantTracker,
   buildCaptionSpeakerTimeline,
@@ -66,6 +67,7 @@ export class MeetingOrchestrator {
     const bot = createMeetingBot(session.platform, logger);
     const participantTracker = new ParticipantTracker();
     const captionTracker = new CaptionTracker();
+    const activeSpeakerTracker = new ActiveSpeakerTracker();
 
     let joinedAt: Date | undefined;
     let endedAt = new Date();
@@ -135,6 +137,7 @@ export class MeetingOrchestrator {
         bot,
         participantTracker,
         captionTracker,
+        activeSpeakerTracker,
         logger,
         () => joinedAt,
         () => captureCancelled
@@ -653,14 +656,34 @@ export class MeetingOrchestrator {
             const speakerResolutionParticipants = requireParticipantPanelRoster
               ? mergeParticipants(participants, validatedCaptionSpeakers(speakerHintCaptions))
               : participants;
+            // Active-speaker timeline (highlighted-tile samples) → recording-clock
+            // spans, aligned off the bot's join time. Language-independent ground
+            // truth for cluster→participant mapping; empty for platforms/sessions
+            // where no speaking indicator was ever read, leaving behaviour unchanged.
+            const activeSpeakerSpans = joinedAt
+              ? buildActiveSpeakerSpans(activeSpeakerTracker.values(), joinedAt.getTime(), env.CAPTURE_INTERVAL_MS)
+              : [];
             diarizedTranscript = mapSpeakersToParticipants(
               normalized,
               speakerResolutionParticipants,
               speakerHintCaptions,
               logger,
               joinedAt,
-              participantTracker.getTimeline(endedAt)
+              participantTracker.getTimeline(endedAt),
+              activeSpeakerSpans
             );
+            if (activeSpeakerSpans.length > 0) {
+              await this.appendLog(session, {
+                phase: "transcription",
+                event: "active_speaker_timeline_applied",
+                message: "Active-speaker timeline used for speaker attribution",
+                status: "processing",
+                metadata: {
+                  activeSpeakerSampleCount: activeSpeakerTracker.size(),
+                  activeSpeakerSpanCount: activeSpeakerSpans.length
+                }
+              });
+            }
             await this.appendLog(session, {
               phase: "transcription",
               event: "speaker_mapping_completed",
@@ -1631,6 +1654,7 @@ export class MeetingOrchestrator {
     bot: ReturnType<typeof createMeetingBot>,
     participantTracker: ParticipantTracker,
     captionTracker: CaptionTracker,
+    activeSpeakerTracker: ActiveSpeakerTracker,
     logger: typeof rootLogger,
     getJoinedAt: () => Date | undefined,
     shouldStop: () => boolean
@@ -1675,6 +1699,22 @@ export class MeetingOrchestrator {
         );
         if (captionSpeakers.length > 0) {
           participantTracker.observe(captionSpeakers, "caption_label");
+        }
+      }
+
+      // Sample the platform's OWN active-speaker signal (highlighted/speaking
+      // tile) every tick once we're inside. This is the language-independent
+      // ground truth used post-meeting to name diarised voice clusters — it
+      // reads the tile's display name, not the audio, so it fixes "Speaker A/B"
+      // on Gujarati/Hindi/mixed meetings where caption attribution is unreliable.
+      // Best-effort: any failure yields [] and capture continues unchanged.
+      if (getJoinedAt()) {
+        const activeSpeakers = await bot.snapshotActiveSpeakers().catch((error) => {
+          logger.debug({ err: error }, "active-speaker snapshot failed");
+          return [] as string[];
+        });
+        if (activeSpeakers.length > 0) {
+          activeSpeakerTracker.observe(activeSpeakers, new Date());
         }
       }
 

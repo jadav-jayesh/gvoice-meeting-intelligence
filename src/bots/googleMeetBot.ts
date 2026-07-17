@@ -253,6 +253,52 @@ export class GoogleMeetBot extends BaseMeetingBot {
   }
 
   // Override to perform Google-specific, robust DOM-based caption parsing
+  // Read the display name(s) of the tile(s) Google Meet is currently
+  // highlighting as the active speaker. Meet draws an animated ring on the
+  // speaking tile (the yellow rgb(251,…) / rgb(255,213,…) outline/box-shadow the
+  // caption scraper already keys on). Language-independent — it reads the tile's
+  // name label, not the audio. Returns [] when nobody is highlighted.
+  override async snapshotActiveSpeakers(): Promise<string[]> {
+    const page = this.getPage();
+    if (page.isClosed()) return [];
+    return page
+      .evaluate(() => {
+        const visible = (element: Element): boolean => {
+          const node = element as HTMLElement;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          const style = window.getComputedStyle(node);
+          return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+        };
+        const nameOf = (text: string): string | null => {
+          const line = text
+            .split(/\n+/)
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .slice(-1)[0] ?? "";
+          return /^[\p{L}\p{M} .'-]{2,80}$/u.test(line) ? line : null;
+        };
+        const names = new Set<string>();
+        const candidates = Array.from(document.querySelectorAll("div, span")) as HTMLElement[];
+        for (const node of candidates) {
+          if (!visible(node)) continue;
+          const rect = node.getBoundingClientRect();
+          if (rect.width < 160 || rect.height < 120) continue;
+          const style = window.getComputedStyle(node);
+          const highlighted =
+            style.outlineColor.includes("251") ||
+            style.borderColor.includes("251") ||
+            style.boxShadow.includes("rgb(251") ||
+            style.boxShadow.includes("255, 213");
+          if (!highlighted) continue;
+          const name = nameOf(node.innerText || node.textContent || "");
+          if (name) names.add(name);
+        }
+        return [...names];
+      })
+      .catch(() => []);
+  }
+
   override async snapshotCaptions(): Promise<Array<Omit<CaptionTimelineEntry, "source">>> {
     // Self-healing: if captions never turned on at join, retry from inside
     // the capture loop. Cheap when already enabled.

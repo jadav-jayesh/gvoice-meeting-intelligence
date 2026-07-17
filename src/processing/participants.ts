@@ -375,7 +375,43 @@ const stopwordParticipants = new Set([
   // the product wordmark and from captions like "Google meet my channel".
   // "meet" / "meeting" are already above; these add the missing siblings.
   "google",
-  "welcome"
+  "welcome",
+  // Participant-STATUS words. Teams/Meet/Zoom render a live status line next to
+  // (or in place of) a person's name in the roster — "Leaving", "Reconnecting",
+  // "Ringing", etc. These arrive Title-cased and single-token, so they sail past
+  // the "capitalised ⇒ probably a name" heuristic and show up as a phantom
+  // participant (observed in prod: session 16ac9294 listed a 4th attendee
+  // "Leaving"). The base verbs "leave"/"left"/"join"/"joined"/"joining"/
+  // "waiting"/"connecting"/"present"/"presenting"/"muted"/"unmuted" are already
+  // above; these add the -ing / status siblings that were missing.
+  "leaving",
+  "rejoining",
+  "reconnecting",
+  "reconnected",
+  "disconnected",
+  "disconnecting",
+  "removed",
+  "admitting",
+  "admitted",
+  "ringing",
+  "calling",
+  "called",
+  "dialing",
+  "dialling",
+  "declined",
+  "busy",
+  "unavailable",
+  "away",
+  "idle",
+  "hold",
+  "offline",
+  "online",
+  "active",
+  "inactive",
+  "speaking",
+  "typing",
+  "pinned",
+  "spotlighted"
 ]);
 
 const suffixNoise = /\b(\(.*?\)|\[.*?\]|host|guest|external|organizer|presenter|presenting|muted|unmuted|you|me)\b/giu;

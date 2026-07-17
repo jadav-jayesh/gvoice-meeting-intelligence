@@ -41,6 +41,81 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     await this.enforceBrowserFullscreen("teams-meeting-view");
   }
 
+  // Read the display name(s) of the tile(s) Teams is currently highlighting as
+  // the active speaker. Teams draws an animated "voice level" outline around the
+  // speaking participant's tile/avatar; we key on that indicator (plus generic
+  // speaking/active-speaker markers as a fallback across Teams versions), then
+  // read the person's name off the enclosing tile. Language-independent — reads
+  // the tile label, not the audio. Returns [] when nobody is highlighted.
+  override async snapshotActiveSpeakers(): Promise<string[]> {
+    const page = this.getPage();
+    if (page.isClosed()) return [];
+    return page
+      .evaluate(() => {
+        const visible = (element: Element): boolean => {
+          const node = element as HTMLElement;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          const style = window.getComputedStyle(node);
+          return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+        };
+        const looksLikeName = (raw: string): string | null => {
+          const text = (raw || "").replace(/\s+/g, " ").trim();
+          if (!text) return null;
+          // Strip common Teams tile decorations so the name reads cleanly.
+          const stripped = text
+            .replace(/,?\s*(muted|unmuted|speaking|presenting|sharing|camera (on|off)|hand raised|raised hand|organi[sz]er|guest|external)\b.*$/i, "")
+            .replace(/'s (video|content|screen)$/i, "")
+            .replace(/^content from\s+/i, "")
+            .trim();
+          if (stripped.length < 2 || stripped.length > 80) return null;
+          if (/[.!?;:]/.test(stripped)) return null;
+          return /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(stripped) ? stripped : null;
+        };
+        const nameFromTile = (tile: Element | null): string | null => {
+          if (!tile) return null;
+          const nameSelectors = [
+            '[data-tid="tile-nameplate"]',
+            '[data-tid*="nameplate" i]',
+            '[data-tid*="displayName" i]',
+            '[data-tid*="display-name" i]',
+            '[data-tid*="participant-name" i]'
+          ];
+          for (const sel of nameSelectors) {
+            const el = tile.querySelector(sel) as HTMLElement | null;
+            if (el && visible(el)) {
+              const name = looksLikeName(el.innerText || el.textContent || "");
+              if (name) return name;
+            }
+          }
+          const aria = (tile as HTMLElement).getAttribute?.("aria-label");
+          return aria ? looksLikeName(aria) : null;
+        };
+        const indicatorSelectors = [
+          '[data-tid="voice-level-stream-outline"]',
+          '[data-tid*="voice-level" i]',
+          '[data-tid*="active-speaker" i]',
+          '[data-tid*="speaking" i]',
+          '[class*="speaking" i]',
+          '[class*="activeSpeaker" i]'
+        ];
+        const tileSelector =
+          '[data-tid*="participant" i], [data-tid*="stream" i], [data-tid*="tile" i], [data-cid], [role="listitem"], [aria-label]';
+        const names = new Set<string>();
+        for (const sel of indicatorSelectors) {
+          const nodes = Array.from(document.querySelectorAll(sel));
+          for (const node of nodes) {
+            if (!visible(node)) continue;
+            const tile = (node as Element).closest(tileSelector) ?? node.parentElement;
+            const name = nameFromTile(tile) ?? nameFromTile(node);
+            if (name) names.add(name);
+          }
+        }
+        return [...names];
+      })
+      .catch(() => []);
+  }
+
   async snapshotParticipants(): Promise<string[]> {
     await this.dismissTeamsDevicePermissionUi(4);
     let panelReadable = false;
@@ -419,11 +494,18 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     }
   }
 
-  // True when Teams is showing its own "app failed to load" error screen: the
-  // failure text together with a Retry button (and no meeting/pre-join UI).
+  // True when Teams is showing its own hard error screen: the failure text
+  // together with a Retry button (and no meeting/pre-join UI). Teams uses a few
+  // different wordings for the same fatal boot failure — "app failed to load",
+  // "app failed to init!" (observed in prod: session 3c2767d3, bot stuck on this
+  // screen for the whole join window), or a generic "something went wrong". Match
+  // any "app failed to <verb>" plus the known variants so recovery isn't defeated
+  // by a one-word change in Microsoft's copy.
   private async isTeamsLoadError(): Promise<boolean> {
     const body = await this.getPage().locator("body").innerText({ timeout: 800 }).catch(() => "");
-    if (!/app failed to load|failed to load|something went wrong/i.test(body)) return false;
+    if (!/app failed to (?:load|init|initialize|start)|failed to load|something went wrong/i.test(body)) {
+      return false;
+    }
     return this.isRoleButtonVisible(/^retry$|^try again$/i, 600);
   }
 

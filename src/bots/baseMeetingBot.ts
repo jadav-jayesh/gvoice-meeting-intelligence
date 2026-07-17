@@ -106,6 +106,13 @@ export abstract class BaseMeetingBot implements MeetingBot {
   abstract snapshotCaptions(): Promise<Array<Omit<CaptionTimelineEntry, "source">>>;
   abstract hasMeetingEnded(): Promise<boolean>;
 
+  // Best-effort active-speaker read. Base returns nothing; platform bots that
+  // can see the speaking indicator (Teams, Google Meet) override this. Kept as a
+  // concrete no-op (not abstract) so Zoom and any future bot compile unchanged.
+  async snapshotActiveSpeakers(): Promise<string[]> {
+    return [];
+  }
+
   async leaveMeeting(): Promise<boolean> {
     return this.clickLeaveMeetingControl([/leave call/i, /leave meeting/i, /hang up/i, /^leave$/i]);
   }

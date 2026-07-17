@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { cleanParticipantName } from "./participants";
+import { estimateClockOffset, type SpeakerSpan } from "./teamsSpeakerRemap";
 import type { CaptionTimelineEntry, DiarizedTranscriptSegment, Participant, ParticipantTimelineEntry } from "../types/meeting";
 import type { Logger } from "pino";
 
@@ -23,7 +24,11 @@ export function mapSpeakersToParticipants(
   captions: CaptionTimelineEntry[],
   logger: Logger,
   meetingStartedAt?: Date,
-  participantsTimeline: ParticipantTimelineEntry[] = []
+  participantsTimeline: ParticipantTimelineEntry[] = [],
+  // Language-independent ground truth: spans (in recording-seconds) of who the
+  // meeting UI highlighted as the active speaker. When present these are the
+  // strongest evidence and are applied BEFORE caption/elimination phases.
+  activeSpeakerSpans: SpeakerSpan[] = []
 ): DiarizedTranscriptSegment[] {
   if (transcript.length === 0) return [];
 
@@ -63,6 +68,16 @@ export function mapSpeakersToParticipants(
       });
       usedParticipants.add(cleanedClusterName.toLocaleLowerCase("en-US"));
     }
+  }
+
+  // Phase 0.5 — active-speaker evidence (highest priority, language-independent).
+  // Maps voice clusters to real participants using the meeting UI's own
+  // "who is speaking now" timeline. Runs before the caption/elimination phases
+  // and locks its clusters, so it wins over unreliable native-language captions
+  // and over turn-order guessing. A participant may own multiple clusters (a
+  // single voice split by the diariser) — active-speaker is per-time truth.
+  if (activeSpeakerSpans.length > 0) {
+    applyActiveSpeakerMapping(transcript, activeSpeakerSpans, participantSet, realParticipants, decisions, usedParticipants, logger);
   }
 
   const captionScores = scoreCaptionHints(transcript, filteredCaptions, participantSet, meetingStartedAt);
@@ -342,6 +357,93 @@ export function mapSpeakersToParticipants(
           : segment.confidence ?? confidence ?? 0.3
     };
   });
+}
+
+// Minimum active-speaker overlap (seconds) and share-of-cluster required before
+// a cluster is bound to a participant. Guards against a stray highlight sample
+// (e.g. a tile that flickered active on a UI transition) claiming a whole
+// cluster of speech.
+const MIN_ACTIVE_SPEAKER_OVERLAP_SECONDS = 2;
+const MIN_ACTIVE_SPEAKER_FRACTION = 0.55;
+
+// Bind voice clusters to real participants using the active-speaker timeline.
+// For each cluster we sum, per participant name, the time its diarised segments
+// overlap that participant's active-speaker spans (after aligning the two
+// clocks). The dominant name — if it clears the overlap/fraction thresholds —
+// wins the cluster with high confidence. Assignment is per-cluster (not global
+// 1:1) so a single voice the diariser split across clusters correctly maps every
+// piece back to the same person.
+function applyActiveSpeakerMapping(
+  transcript: DiarizedTranscriptSegment[],
+  spans: SpeakerSpan[],
+  participantSet: Set<string>,
+  realParticipants: string[],
+  decisions: Map<string, MappingDecision>,
+  usedParticipants: Set<string>,
+  logger: Logger
+): void {
+  const participantsByKey = new Map<string, string>();
+  for (const name of realParticipants) {
+    participantsByKey.set(name.toLocaleLowerCase("en-US"), name);
+  }
+
+  // Reconcile each span's name to a known participant; drop spans we can't match
+  // (a highlighted tile whose name isn't in the roster — e.g. a late artifact).
+  const usableSpans = spans
+    .map((span) => {
+      const clean = cleanParticipantName(span.speaker);
+      if (!clean) return null;
+      const key = clean.toLocaleLowerCase("en-US");
+      if (!participantSet.has(key)) return null;
+      return { speaker: participantsByKey.get(key) ?? clean, start: span.start, end: span.end } as SpeakerSpan;
+    })
+    .filter((span): span is SpeakerSpan => Boolean(span));
+  if (usableSpans.length === 0) return;
+
+  const offset = estimateClockOffset(transcript.map((segment) => segment.startTime), usableSpans);
+
+  // clusterKey → (participantName → overlap seconds). Keyed by `segment.speaker`
+  // (the diariser label) to match how `decisions` is keyed everywhere else in
+  // this mapper — the final segment loop looks up `decisions.get(segment.speaker)`.
+  const clusterScores = new Map<string, Map<string, number>>();
+  for (const segment of transcript) {
+    const clusterKey = segment.speaker;
+    const start = segment.startTime + offset;
+    const end = segment.endTime + offset;
+    for (const span of usableSpans) {
+      const overlap = Math.min(end, span.end) - Math.max(start, span.start);
+      if (overlap <= 0) continue;
+      const byName = clusterScores.get(clusterKey) ?? new Map<string, number>();
+      byName.set(span.speaker, (byName.get(span.speaker) ?? 0) + overlap);
+      clusterScores.set(clusterKey, byName);
+    }
+  }
+
+  const applied: MappingDecision[] = [];
+  for (const [clusterKey, byName] of clusterScores.entries()) {
+    if (decisions.has(clusterKey)) continue;
+    const total = [...byName.values()].reduce((sum, value) => sum + value, 0);
+    const top = [...byName.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (!top) continue;
+    const [topName, topOverlap] = top;
+    if (!topName) continue;
+    const fraction = total > 0 ? topOverlap / total : 0;
+    if (topOverlap < MIN_ACTIVE_SPEAKER_OVERLAP_SECONDS || fraction < MIN_ACTIVE_SPEAKER_FRACTION) continue;
+
+    const decision: MappingDecision = {
+      cluster: clusterKey,
+      mappedSpeaker: topName,
+      confidence: Math.min(0.97, 0.85 + fraction * 0.12),
+      reason: `active-speaker overlap (${topOverlap.toFixed(1)}s, ${(fraction * 100).toFixed(0)}% of cluster)`
+    };
+    decisions.set(clusterKey, decision);
+    usedParticipants.add(topName.toLocaleLowerCase("en-US"));
+    applied.push(decision);
+  }
+
+  if (applied.length > 0) {
+    logger.info({ decisions: applied, spanCount: usableSpans.length, offset }, "speaker mapping: active-speaker evidence applied");
+  }
 }
 
 function applyDominanceFallback(

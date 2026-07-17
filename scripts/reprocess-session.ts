@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { connectMongo, disconnectMongo } from "../src/db/mongoose";
 import { env } from "../src/config/env";
+import { hydrateRuntimeConfig } from "../src/config/runtimeConfig";
 import { BotSessionModel } from "../src/models/BotSession";
 import { TranscriptionService, shouldTranslateToEnglish } from "../src/transcription/transcriptionService";
 import { TranslationService } from "../src/ai/translationService";
@@ -183,6 +184,11 @@ async function main(): Promise<void> {
   }
 
   await connectMongo();
+  // Hydrate DB-backed runtime config (Settings-UI overrides) so this script uses
+  // the SAME keys as the live service. Without this, cfgString falls back to
+  // .env — which can hold a stale/rotated key (e.g. an exhausted SARVAM_API_KEY),
+  // producing failures the running service never sees.
+  await hydrateRuntimeConfig();
   try {
     for (const sessionId of sessionIds) {
       await reprocess(sessionId, { dryRun, transcriptOnly });

@@ -11,6 +11,7 @@ import { authRouter } from "./routes/auth";
 import { botsRouter } from "./routes/bots";
 import { calendarRouter } from "./routes/calendar";
 import { meetingsRouter } from "./routes/meetings";
+import { publicRouter } from "./routes/public";
 import { insightsRouter } from "./routes/insights";
 import { adminRouter } from "./routes/admin";
 import { adminSettingsRouter } from "./routes/adminSettings";
@@ -84,6 +85,7 @@ export function createServer(): express.Express {
   app.use("/bots", botsRouter);
   app.use("/api/calendar", calendarRouter);
   app.use("/api/meetings", meetingsRouter);
+  app.use("/api/public", publicRouter);
   app.use("/api/insights", insightsRouter);
   app.use("/api/admin/settings", adminSettingsRouter);
   app.use("/api/admin", adminRouter);

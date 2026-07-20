@@ -6,6 +6,7 @@ import { UserModel } from "../models/User";
 import { requireAuth } from "../middleware/requireAuth";
 import { requireCsrf } from "../middleware/requireCsrf";
 import { deleteMeetingForUser, deleteMeetingAsAdmin } from "../services/account/dataDeletion";
+import { enableShare, disableShare } from "../services/meetingShare";
 import { signBlobReadUrl } from "../storage/azureBlobStorage";
 import { botPlatforms, botStatuses } from "../types/meeting";
 
@@ -267,6 +268,44 @@ meetingsRouter.get("/:sessionId/logs", async (req, res, next) => {
       return;
     }
     res.json({ logs: session.meetingLogs ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create (or re-enable) a public share link for a meeting. Anyone with access
+// to the meeting (owner/shared viewer) or an admin can share it. Returns the
+// public URL + token so the UI can copy it.
+meetingsRouter.post("/:sessionId/share", requireCsrf, async (req, res, next) => {
+  try {
+    const result = await enableShare(String(req.params.sessionId), req.user!.id, await isAdmin(req.user!.id));
+    if (result.status === "not_found") {
+      res.status(404).json({ error: "Meeting not found" });
+      return;
+    }
+    if (result.status === "forbidden") {
+      res.status(403).json({ error: "You can't share this meeting" });
+      return;
+    }
+    res.json({ enabled: result.enabled, token: result.token, url: result.url });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Revoke a meeting's public share link. The same link stops working instantly.
+meetingsRouter.delete("/:sessionId/share", requireCsrf, async (req, res, next) => {
+  try {
+    const result = await disableShare(String(req.params.sessionId), req.user!.id, await isAdmin(req.user!.id));
+    if (result.status === "not_found") {
+      res.status(404).json({ error: "Meeting not found" });
+      return;
+    }
+    if (result.status === "forbidden") {
+      res.status(403).json({ error: "You can't share this meeting" });
+      return;
+    }
+    res.json({ enabled: false });
   } catch (error) {
     next(error);
   }

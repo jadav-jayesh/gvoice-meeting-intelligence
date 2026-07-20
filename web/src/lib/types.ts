@@ -211,4 +211,8 @@ export interface Meeting {
   createdAt: string;
   updatedAt: string;
   errorMessage?: string;
+  // Public share-link state — present so the detail page's Share control can
+  // reflect whether a link already exists.
+  shareEnabled?: boolean;
+  shareToken?: string;
 }

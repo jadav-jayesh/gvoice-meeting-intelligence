@@ -86,6 +86,14 @@ export interface BotSession {
   startedAt?: Date;
   endedAt?: Date;
   errorMessage?: string;
+  // Public share link. When shareEnabled is true, anyone holding shareToken can
+  // view a read-only, sanitized copy of this meeting at /share/<token> with no
+  // login. The token is an unguessable random string; disabling share (or
+  // clearing the token) instantly kills the public link.
+  shareToken?: string;
+  shareEnabled?: boolean;
+  sharedAt?: Date;
+  sharedBy?: Types.ObjectId;
   // Populated by Mongoose `timestamps: true`.
   createdAt?: Date;
   updatedAt?: Date;
@@ -363,7 +371,11 @@ const botSessionSchema = new Schema<BotSession>(
     thumbnailUrl: { type: String },
     startedAt: { type: Date },
     endedAt: { type: Date },
-    errorMessage: { type: String }
+    errorMessage: { type: String },
+    shareToken: { type: String },
+    shareEnabled: { type: Boolean, default: false },
+    sharedAt: { type: Date },
+    sharedBy: { type: Schema.Types.ObjectId, ref: "User" }
   },
   { timestamps: true }
 );
@@ -387,6 +399,9 @@ botSessionSchema.index({ meetingInstanceKey: 1 }, { unique: true, sparse: true }
 // Manual-join lookup: "is a bot already live for this link?" — find active
 // sessions by normalized join-url key, newest first.
 botSessionSchema.index({ meetingDedupeKey: 1, status: 1, createdAt: -1 });
+// Public share-link lookup: find one session by its token. Unique+sparse so
+// only shared sessions are indexed and two sessions can't collide on a token.
+botSessionSchema.index({ shareToken: 1 }, { unique: true, sparse: true });
 botSessionSchema.index({ sessionId: 1, "meetingLogs.time": 1 });
 botSessionSchema.index({ status: 1, "transcriptPolling.nextRetryAt": 1 });
 

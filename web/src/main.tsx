@@ -23,6 +23,7 @@ import { CalendarsPage } from "./pages/CalendarsPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsPage } from "./pages/TermsPage";
+import { SharedMeetingPage } from "./pages/SharedMeetingPage";
 import "./index.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -38,6 +39,9 @@ root.render(
           {/* Public legal pages — open to everyone */}
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsPage />} />
+
+          {/* Public shared meeting — anyone with the link, no login */}
+          <Route path="/share/:token" element={<SharedMeetingPage />} />
 
           {/* Public auth pages — no app shell, redirect away if already signed in */}
           <Route element={<RedirectIfAuthed />}>

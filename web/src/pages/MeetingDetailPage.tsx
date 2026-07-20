@@ -8,6 +8,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { Icon } from "../components/Icon";
 import { SentimentTimeline } from "../components/SentimentTimeline";
 import { TranscriptList } from "../components/TranscriptList";
+import { ShareControl } from "../components/meetings/ShareControl";
 import { deleteMeeting, getMeeting } from "../lib/api";
 import type { BotStatus, Meeting, SentimentMoment } from "../lib/types";
 import {
@@ -321,6 +322,11 @@ export function MeetingDetailPage() {
                 </span>
               )
             )}
+            <ShareControl
+              sessionId={meeting.sessionId}
+              initialEnabled={meeting.shareEnabled}
+              initialToken={meeting.shareToken}
+            />
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}

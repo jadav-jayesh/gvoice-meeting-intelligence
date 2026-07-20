@@ -1,4 +1,16 @@
-import type { Meeting, MeetingListResponse, BotPlatform, BotStatus, User, UserRole } from "./types";
+import type {
+  Meeting,
+  MeetingListResponse,
+  BotPlatform,
+  BotStatus,
+  User,
+  UserRole,
+  MeetingChapter,
+  ActionItem,
+  SentimentSummary,
+  DiarizedTranscriptSegment,
+  MomReport
+} from "./types";
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -198,6 +210,61 @@ export function deleteMeeting(sessionId: string): Promise<{ ok: boolean; purged:
   return request<{ ok: boolean; purged: boolean }>(`/api/meetings/${encodeURIComponent(sessionId)}`, {
     method: "DELETE"
   });
+}
+
+// ── Public share links ───────────────────────────────────────────────────────
+
+export interface ShareLinkResponse {
+  enabled: boolean;
+  token: string | null;
+  url: string | null;
+}
+
+// Creates (or re-enables) a public share link for a meeting.
+export function createShareLink(sessionId: string): Promise<ShareLinkResponse> {
+  return request<ShareLinkResponse>(`/api/meetings/${encodeURIComponent(sessionId)}/share`, {
+    method: "POST"
+  });
+}
+
+// Revokes the public share link. The same URL stops working immediately.
+export function revokeShareLink(sessionId: string): Promise<{ enabled: boolean }> {
+  return request<{ enabled: boolean }>(`/api/meetings/${encodeURIComponent(sessionId)}/share`, {
+    method: "DELETE"
+  });
+}
+
+export interface PublicMeeting {
+  token: string;
+  meetingName?: string;
+  platform: BotPlatform;
+  status: BotStatus;
+  meetingLanguage?: string;
+  transcriptionProvider?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt?: string;
+  participants: Array<{ name: string }>;
+  summary: string;
+  chapters: MeetingChapter[];
+  actionItems: ActionItem[];
+  sentimentSummary?: SentimentSummary;
+  diarizedTranscript: DiarizedTranscriptSegment[];
+  transcriptText: string;
+  momReport?: MomReport;
+  hasRecording: boolean;
+  recordingUrl?: string;
+  thumbnailUrl?: string;
+}
+
+// Fetches a publicly-shared meeting by token. This endpoint is UNAUTHENTICATED,
+// so it bypasses `request`'s 401/refresh handling entirely — a plain fetch. A
+// 404 means the link is invalid or was revoked.
+export async function getPublicMeeting(token: string): Promise<PublicMeeting> {
+  const res = await fetch(`/api/public/meetings/${encodeURIComponent(token)}`);
+  if (res.status === 404) throw new Error("unavailable");
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json() as Promise<PublicMeeting>;
 }
 
 export interface MeetingStats {

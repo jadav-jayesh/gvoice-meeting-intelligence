@@ -8,6 +8,8 @@ import { BrandLogo } from "../components/BrandLogo";
 import { TranscriptList } from "../components/TranscriptList";
 import { SentimentTimeline } from "../components/SentimentTimeline";
 import { getPublicMeeting, type PublicMeeting } from "../lib/api";
+import type { Meeting } from "../lib/types";
+import { buildMomHtml } from "../lib/mom";
 import {
   formatDuration,
   formatRelative,
@@ -134,6 +136,8 @@ export function SharedMeetingPage() {
             <span className="inline-flex items-center gap-1.5 uppercase tracking-wide">{meeting.meetingLanguage}</span>
           )}
         </div>
+
+        <DownloadsBar meeting={meeting} title={title} />
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -253,6 +257,169 @@ export function SharedMeetingPage() {
       </div>
     </Shell>
   );
+}
+
+// ── Downloads ────────────────────────────────────────────────────────────────
+
+function DownloadsBar({ meeting, title }: { meeting: PublicMeeting; title: string }) {
+  const base = safeName(title);
+  const hasMom = Boolean(meeting.momReport) || Boolean(meeting.summary?.trim());
+  const hasTranscript = meeting.diarizedTranscript.length > 0;
+  const hasNotes = Boolean(meeting.summary?.trim()) || meeting.actionItems.length > 0;
+
+  if (!hasMom && !hasTranscript && !hasNotes && !meeting.hasRecording) return null;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      {hasMom && (
+        <DownloadButton
+          label="Minutes (MoM)"
+          onClick={() => downloadBlob(`${base}-minutes.html`, buildMomHtml(asMeeting(meeting)), "text/html;charset=utf-8")}
+        />
+      )}
+      {hasTranscript && (
+        <DownloadButton
+          label="Transcript"
+          onClick={() => downloadBlob(`${base}-transcript.txt`, buildTranscriptTxt(meeting), "text/plain;charset=utf-8")}
+        />
+      )}
+      {hasNotes && (
+        <DownloadButton
+          label="Summary & actions"
+          onClick={() => downloadBlob(`${base}-notes.txt`, buildNotesTxt(meeting), "text/plain;charset=utf-8")}
+        />
+      )}
+      {meeting.hasRecording && meeting.recordingUrl && (
+        <a
+          href={meeting.recordingUrl}
+          download={`${base}.mp4`}
+          className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line bg-surface text-[12.5px] font-medium text-inkMute transition-colors hover:text-ink focus-ring"
+        >
+          <Icon.Download size={13} />
+          Recording
+        </a>
+      )}
+    </div>
+  );
+}
+
+function DownloadButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line bg-surface text-[12.5px] font-medium text-inkMute transition-colors hover:text-ink focus-ring"
+    >
+      <Icon.Download size={13} />
+      {label}
+    </button>
+  );
+}
+
+function downloadBlob(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function safeName(title: string): string {
+  return title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
+}
+
+// Adapt the sanitized PublicMeeting to the Meeting shape buildMomHtml expects.
+// buildMomHtml reads only presentation fields and never emits authed URLs, so
+// the token stands in for sessionId (it only surfaces as the "MOM-xxxxxxxx"
+// reference label). Missing internal fields are filled with safe empties.
+function asMeeting(pm: PublicMeeting): Meeting {
+  const stamp = pm.createdAt ?? pm.startedAt ?? new Date().toISOString();
+  return {
+    sessionId: pm.token,
+    platform: pm.platform,
+    meetingUrl: "",
+    meetingName: pm.meetingName,
+    status: pm.status,
+    participants: pm.participants,
+    participantsTimeline: [],
+    captionsTimeline: [],
+    diarizedTranscript: pm.diarizedTranscript,
+    transcriptText: pm.transcriptText,
+    transcriptionProvider: pm.transcriptionProvider,
+    meetingLanguage: pm.meetingLanguage,
+    summary: pm.summary,
+    chapters: pm.chapters,
+    actionItems: pm.actionItems,
+    sentimentSummary: pm.sentimentSummary,
+    recordingUrl: pm.recordingUrl,
+    thumbnailUrl: pm.thumbnailUrl,
+    momReport: pm.momReport,
+    startedAt: pm.startedAt,
+    endedAt: pm.endedAt,
+    createdAt: stamp,
+    updatedAt: stamp
+  };
+}
+
+function pad2(n: number): string {
+  return String(Math.floor(n)).padStart(2, "0");
+}
+function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(sec)}` : `${m}:${pad2(sec)}`;
+}
+function headerLines(pm: PublicMeeting, title: string): string[] {
+  const date = formatRelative(pm.endedAt ?? pm.startedAt ?? pm.createdAt);
+  return [title, date, ""];
+}
+
+// Plain-text transcript: grouped consecutive speaker blocks with a leading
+// timestamp. No watch/deeplink URLs (those are authed-only), so it's safe to
+// share publicly.
+function buildTranscriptTxt(pm: PublicMeeting): string {
+  const title = pm.meetingName?.trim() || "Meeting";
+  const lines: string[] = headerLines(pm, title);
+  type Group = { speaker: string; startTime: number; text: string };
+  const groups: Group[] = [];
+  for (const seg of pm.diarizedTranscript) {
+    const last = groups[groups.length - 1];
+    if (last && last.speaker === seg.speaker) last.text = `${last.text} ${seg.text}`.trim();
+    else groups.push({ speaker: seg.speaker, startTime: seg.startTime, text: seg.text });
+  }
+  for (const g of groups) {
+    lines.push(`[${clock(g.startTime)}] ${g.speaker}`);
+    lines.push(g.text);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+// Summary + key takeaways + action items — the "important things".
+function buildNotesTxt(pm: PublicMeeting): string {
+  const title = pm.meetingName?.trim() || "Meeting";
+  const lines: string[] = headerLines(pm, title);
+  if (pm.summary?.trim()) {
+    lines.push("SUMMARY", pm.summary.trim(), "");
+  }
+  const takeaways = pm.momReport?.keyTakeaways ?? [];
+  if (takeaways.length) {
+    lines.push("KEY TAKEAWAYS");
+    for (const t of takeaways) lines.push(`- ${t.title}${t.detail ? `: ${t.detail}` : ""}`);
+    lines.push("");
+  }
+  if (pm.actionItems.length) {
+    lines.push("ACTION ITEMS");
+    for (const a of pm.actionItems) lines.push(`- ${a.task}${a.assignee ? ` (${a.assignee})` : ""}`);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 function SectionTitle({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {

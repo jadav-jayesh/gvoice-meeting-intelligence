@@ -399,9 +399,12 @@ botSessionSchema.index({ meetingInstanceKey: 1 }, { unique: true, sparse: true }
 // Manual-join lookup: "is a bot already live for this link?" — find active
 // sessions by normalized join-url key, newest first.
 botSessionSchema.index({ meetingDedupeKey: 1, status: 1, createdAt: -1 });
-// Public share-link lookup: find one session by its token. Unique+sparse so
-// only shared sessions are indexed and two sessions can't collide on a token.
-botSessionSchema.index({ shareToken: 1 }, { unique: true, sparse: true });
+// Public share-link lookup: find one session by its token. Sparse (only shared
+// sessions are indexed). NOT unique: Cosmos DB's Mongo API can't build a unique
+// index on a non-empty collection, and the 24-byte (192-bit) random token makes
+// a collision astronomically unlikely, so we rely on entropy rather than a DB
+// constraint.
+botSessionSchema.index({ shareToken: 1 }, { sparse: true });
 botSessionSchema.index({ sessionId: 1, "meetingLogs.time": 1 });
 botSessionSchema.index({ status: 1, "transcriptPolling.nextRetryAt": 1 });
 

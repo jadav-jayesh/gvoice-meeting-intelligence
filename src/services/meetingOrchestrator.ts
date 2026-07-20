@@ -1700,6 +1700,21 @@ export class MeetingOrchestrator {
         );
         if (captionSpeakers.length > 0) {
           participantTracker.observe(captionSpeakers, "caption_label");
+          // A caption from a real (non-bot) speaker is PROOF a human is in the
+          // meeting and talking — stronger evidence than the participant panel.
+          // The no-show / alone auto-leave decisions were previously gated ONLY
+          // on the panel read (`observed.length > 0`); on Google Meet the panel
+          // scrape frequently returns nothing (names hidden behind self-view),
+          // so a fully-attended, actively-talking meeting looked "empty" and the
+          // bot auto-left at the no-show timeout (prod: d7ceaa46 left at 8min
+          // while 3 people spoke). Treat caption-detected speakers as presence
+          // so those timers can't fire while people are audibly participating.
+          everSawOtherParticipant = true;
+          if (aloneSinceMs !== null) {
+            const elapsed = Date.now() - aloneSinceMs;
+            aloneSinceMs = null;
+            logger.info({ elapsedMs: elapsed }, "alone timer cleared — caption-detected speaker present");
+          }
         }
       }
 
@@ -1857,6 +1872,12 @@ export class MeetingOrchestrator {
         getJoinedAt() &&
         noShowTimeoutMs > 0 &&
         !everSawOtherParticipant &&
+        // Any accepted caption is proof a human spoke — never treat such a
+        // meeting as a "no-show", even if both the roster panel AND caption
+        // speaker-validation failed to name anyone. Belt-and-suspenders on top
+        // of everSawOtherParticipant so a panel-blind meeting can't be abandoned
+        // while it is audibly in progress.
+        !everSawCaption &&
         Date.now() - getJoinedAt()!.getTime() >= noShowTimeoutMs
       ) {
         const waitedMs = Date.now() - getJoinedAt()!.getTime();

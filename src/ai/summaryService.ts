@@ -34,6 +34,10 @@ const chapterSchema = z.object({
   title: z.string()
 });
 
+const segmentSentimentBatchSchema = z.object({
+  segmentSentiments: z.array(segmentSentimentSchema).default([])
+});
+
 const summarySchema = z.object({
   summary: z.string().default(""),
   shortTitle: z.string().default(""),
@@ -95,7 +99,7 @@ export class SummaryService {
             role: "system",
             content: [
               "You are a meeting intelligence engine.",
-              "Return strict JSON only with keys: summary, shortTitle, chapters, actionItems, overallSentiment, segmentSentiments, topMoments.",
+              "Return strict JSON only with keys: summary, shortTitle, chapters, actionItems, overallSentiment, topMoments.",
               "shortTitle must be a concise 3-8 word title that captures the main topic of the meeting in title case. No trailing punctuation, no quotes, no emojis. Examples: 'Q3 Roadmap Review', 'Onboarding Sync With Pratik', 'Pricing Page Bug Triage'.",
               "chapters is an array of topic bookmarks emitted only when the subject of conversation shifts meaningfully. Each entry is { index, title } where index references the transcript segment (the integer in square brackets at the start of each line) where the new topic begins. Title must be a short (2-6 word) title-case label, no trailing punctuation. Rules: (a) the first chapter's index should usually be 0 if the meeting opens with a clear topic; (b) omit chapters entirely for short meetings (< 5 minutes or < 30 segments) where the topic does not shift; (c) maximum 8 chapters; (d) chapters must be in ascending index order with no duplicates.",
               "actionItems must be an array of { task, assignee }.",
@@ -107,9 +111,7 @@ export class SummaryService {
               "5. Do not include tasks that were only hypothetical, joking, or clearly resolved during the meeting.",
               "Sentiment rules:",
               "A. overallSentiment is the meeting-level mood. label is one of positive, neutral, negative. score is a number in [-1, 1] where -1 is very negative and 1 is very positive.",
-              "B. segmentSentiments must contain one entry per transcript segment, addressed by its integer index (the number in square brackets at the start of each line). Each entry has the same label + score fields. Score reflects the affect of THAT line in context — assertive/upbeat lines are positive, frustrated/dismissive/conflict lines are negative, factual/procedural lines are neutral (score near 0).",
-              "C. topMoments is a short array (max 5) of the most emotionally salient segments — pick lines where the score magnitude is highest or that shift the conversation. Each entry references the segment by index, includes label + score, and optionally a quote (a short verbatim excerpt; <= 140 chars).",
-              "D. Be consistent: a segment in topMoments must have the same label + score as its entry in segmentSentiments."
+              "B. topMoments is a short array (max 5) of the most emotionally salient segments — pick the lines that are most strongly positive or negative, or that shift the conversation's mood. Each entry references the segment by its integer index (the number in square brackets at the start of each line), includes label + score, and optionally a quote (a short verbatim excerpt; <= 140 chars)."
             ].join(" ")
           },
           {
@@ -123,12 +125,13 @@ export class SummaryService {
           }
         ],
         "summary",
-        // The summary emits one sentiment entry PER segment plus the summary,
-        // action items, chapters and moments — output scales with the meeting.
-        // On reasoning deployments reasoning tokens also come out of this budget,
-        // so give it generous, segment-scaled headroom (a too-small cap returns
-        // empty content and drops the whole meeting to the fallback summary).
-        { maxCompletionTokens: Math.min(16000, 6000 + input.transcript.length * 40) }
+        // Bounded output: summary + shortTitle + up to 8 chapters + action items
+        // + overall sentiment + up to 5 moments does NOT scale with meeting
+        // length, so a fixed cap is safe on any length. Per-segment sentiment
+        // (which DID make this call explode past the rate/token limit on long
+        // meetings → 429/truncation → fallback summary) is now computed
+        // separately in small batches below.
+        { maxCompletionTokens: 6000 }
       );
 
       const parsed = summarySchema.parse(response);
@@ -142,7 +145,14 @@ export class SummaryService {
         return { task: item.task, assignee: canonical };
       });
 
-      const transcriptWithSentiment = mergeSegmentSentiments(input.transcript, parsed.segmentSentiments);
+      // Per-segment sentiment in small, bounded batches — best-effort. A failed
+      // batch just leaves those segments neutral; it never drops the summary to
+      // the fallback (the bug on long meetings). Skipped entirely when disabled.
+      const batchedSentiments = await this.computeSegmentSentiments(input.transcript).catch((error) => {
+        this.logger?.warn({ err: error }, "segment sentiment pass failed; timeline left neutral");
+        return [] as Array<{ index: number; label: SentimentLabel; score: number }>;
+      });
+      const transcriptWithSentiment = mergeSegmentSentiments(input.transcript, batchedSentiments);
       const sentimentSummary = buildSentimentSummary(transcriptWithSentiment, parsed.overallSentiment, parsed.topMoments);
       const chapters = sanitizeChapters(parsed.chapters, input.transcript);
 
@@ -179,6 +189,51 @@ export class SummaryService {
         generationError: message
       };
     }
+  }
+
+  // Per-segment sentiment for the timeline, computed in SMALL batches so each
+  // call's input+output stays well under the rate/token limit regardless of
+  // meeting length. Batches run sequentially (avoids a concurrent TPM burst that
+  // would 429). Each batch is independent and best-effort: a failed/invalid
+  // batch is skipped (those segments stay neutral) and never fails the summary.
+  private async computeSegmentSentiments(
+    transcript: DiarizedTranscriptSegment[]
+  ): Promise<Array<{ index: number; label: SentimentLabel; score: number }>> {
+    if (transcript.length === 0) return [];
+    const BATCH = env.SUMMARY_SENTIMENT_BATCH_SIZE;
+    const out: Array<{ index: number; label: SentimentLabel; score: number }> = [];
+
+    for (let start = 0; start < transcript.length; start += BATCH) {
+      const slice = transcript.slice(start, start + BATCH);
+      const lines = slice
+        .map((segment, offset) => `[${start + offset}] ${segment.speaker}: ${segment.text}`)
+        .join("\n")
+        .slice(0, 40000);
+      try {
+        const response = await this.client.chatJson<unknown>(
+          [
+            {
+              role: "system",
+              content:
+                'Return strict JSON only: {"segmentSentiments":[{"index":<int>,"label":"positive|neutral|negative","score":<-1..1>}]}. ' +
+                "Output exactly one entry per input line, using the integer index in square brackets at the start of that line. " +
+                "score reflects that line's affect in context: assertive/upbeat = positive, frustrated/dismissive/conflict = negative, factual/procedural = neutral (near 0)."
+            },
+            {
+              role: "user",
+              content: `Lines (each prefixed with [index] Speaker: text):\n${lines}`
+            }
+          ],
+          "segment-sentiment",
+          { maxCompletionTokens: Math.min(8000, 400 + slice.length * 24) }
+        );
+        const parsed = segmentSentimentBatchSchema.parse(response);
+        out.push(...parsed.segmentSentiments);
+      } catch (error) {
+        this.logger?.warn({ err: error, start, size: slice.length }, "segment sentiment batch failed; leaving those segments neutral");
+      }
+    }
+    return out;
   }
 }
 

@@ -170,6 +170,10 @@ const envSchema = z.object({
   AZURE_OPENAI_SUMMARY_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
   AZURE_OPENAI_RETRY_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
   AZURE_OPENAI_RETRY_DELAY_MS: z.coerce.number().int().min(250).max(120000).default(5000),
+  // Segments per per-segment-sentiment batch. Keeps each AI call's input+output
+  // bounded so long meetings don't blow the rate/token limit. Lower = safer on a
+  // low-TPM deployment; higher = fewer calls.
+  SUMMARY_SENTIMENT_BATCH_SIZE: z.coerce.number().int().min(20).max(400).default(120),
 
   SARVAM_API_KEY: z.string().optional(),
   SARVAM_DIARIZATION_URL: z.string().optional(),

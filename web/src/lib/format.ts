@@ -163,6 +163,30 @@ export function sentimentSwatch(label: SentimentLabel | undefined): string {
   }
 }
 
+// ── Negative / "needs attention" meeting helpers ─────────────────────────────
+// Surface the meetings that went badly so users can act on them. A meeting is
+// "negative" when the AI classified its overall mood as negative OR the score is
+// clearly below neutral; "critical" when the score is strongly negative.
+interface HasSentiment {
+  sentimentSummary?: { overall: { label: SentimentLabel; score: number } };
+}
+export function meetingSentimentScore(item: HasSentiment): number | null {
+  return item.sentimentSummary?.overall.score ?? null;
+}
+export function isNegativeMeeting(item: HasSentiment): boolean {
+  const overall = item.sentimentSummary?.overall;
+  if (!overall) return false;
+  return overall.label === "negative" || overall.score <= -0.15;
+}
+export function isCriticalNegativeMeeting(item: HasSentiment): boolean {
+  const score = item.sentimentSummary?.overall.score;
+  return typeof score === "number" && score <= -0.4;
+}
+// Sort helper: most negative first (used by the "Needs attention" surfaces).
+export function byMostNegative(a: HasSentiment, b: HasSentiment): number {
+  return (meetingSentimentScore(a) ?? 1) - (meetingSentimentScore(b) ?? 1);
+}
+
 // Legacy aliases — older files still call these names; map to tone strings or
 // raw class names so they keep working until those files get rewritten.
 export const platformColor = platformTone;

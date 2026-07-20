@@ -30,7 +30,10 @@ import {
   statusLabel,
   statusDotClass,
   isMeetingInProgress,
-  isMeetingStale
+  isMeetingStale,
+  isNegativeMeeting,
+  isCriticalNegativeMeeting,
+  byMostNegative
 } from "../lib/format";
 
 const platformOptions: Array<{ value: "" | BotPlatform; label: string }> = [
@@ -59,6 +62,16 @@ export function MeetingsListPage() {
   // because search's onChange still calls setPage(1) on every keystroke. Search
   // and filters intentionally stay in-memory (not URL-synced) for now.
   const [searchParams, setSearchParams] = useSearchParams();
+  // "Needs attention" mode — surface only the negative / bad meetings. Lives in
+  // the URL (?flag=negative) so the dashboard can deep-link straight into it.
+  const negativeOnly = searchParams.get("flag") === "negative";
+  const setNegativeOnly = (on: boolean) => {
+    const params = new URLSearchParams(searchParams);
+    if (on) params.set("flag", "negative");
+    else params.delete("flag");
+    params.delete("page");
+    setSearchParams(params, { replace: true });
+  };
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const setPage = (next: number) => {
     const target = Math.max(1, next);
@@ -103,8 +116,11 @@ export function MeetingsListPage() {
     setLoading(true);
     setError(null);
     listMeetings({
-      page,
-      pageSize: 20,
+      // In "negative only" mode we filter client-side, so pull a larger window
+      // (the API returns sentiment on each item) and show all matches at once
+      // rather than server-paginating.
+      page: negativeOnly ? 1 : page,
+      pageSize: negativeOnly ? 100 : 20,
       platform: platform || undefined,
       status: status || undefined,
       search: debouncedSearch || undefined
@@ -115,14 +131,19 @@ export function MeetingsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, platform, status, debouncedSearch, refreshKey]);
+  }, [page, platform, status, debouncedSearch, refreshKey, negativeOnly]);
 
   const items = data?.items ?? [];
+  // What actually renders: in negative mode, keep only bad meetings, worst first.
+  const displayItems = useMemo(
+    () => (negativeOnly ? items.filter(isNegativeMeeting).sort(byMostNegative) : items),
+    [items, negativeOnly]
+  );
   const totalPages = useMemo(
     () => (data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1),
     [data]
   );
-  const hasActiveFilters = !!search || !!platform || !!status;
+  const hasActiveFilters = !!search || !!platform || !!status || negativeOnly;
 
   // Card-vs-list preference, persisted so it survives navigation away & back.
   const [view, setView] = useState<View>(() => {
@@ -154,9 +175,11 @@ export function MeetingsListPage() {
               Meetings
             </h1>
             <p className="text-inkMute text-[14.5px] mt-2">
-              {data
-                ? `${data.total.toLocaleString()} total · ${data.items.length} on this page`
-                : "Loading…"}
+              {!data
+                ? "Loading…"
+                : negativeOnly
+                ? `${displayItems.length} negative ${displayItems.length === 1 ? "meeting" : "meetings"} · needs attention`
+                : `${data.total.toLocaleString()} total · ${data.items.length} on this page`}
             </p>
           </div>
           <Button
@@ -252,6 +275,20 @@ export function MeetingsListPage() {
             }}
             options={statusOptions}
           />
+          <button
+            type="button"
+            onClick={() => setNegativeOnly(!negativeOnly)}
+            aria-pressed={negativeOnly}
+            title="Show only negative / needs-attention meetings"
+            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[12.5px] font-medium transition-colors focus-ring shrink-0 ${
+              negativeOnly
+                ? "border-negative/50 bg-negative/10 text-negative"
+                : "border-line bg-surface text-inkMute hover:text-ink"
+            }`}
+          >
+            <Icon.AlertCircle size={13} />
+            Negative
+          </button>
           {hasActiveFilters && (
             <Button
               variant="ghost"
@@ -261,6 +298,7 @@ export function MeetingsListPage() {
                 setSearch("");
                 setPlatform("");
                 setStatus("");
+                setNegativeOnly(false);
                 setPage(1);
               }}
             >
@@ -296,13 +334,15 @@ export function MeetingsListPage() {
             </div>
           </Card>
         )
-      ) : items.length === 0 ? (
+      ) : displayItems.length === 0 ? (
         <Card className="overflow-hidden">
           <EmptyState
-            icon={<Icon.Meetings size={18} />}
-            title="No meetings match"
+            icon={negativeOnly ? <Icon.CheckCircle size={18} /> : <Icon.Meetings size={18} />}
+            title={negativeOnly ? "No negative meetings" : "No meetings match"}
             description={
-              hasActiveFilters
+              negativeOnly
+                ? "Nothing needs attention — no meetings came out negative. 🎉"
+                : hasActiveFilters
                 ? "Try clearing the filters above."
                 : "Once your bot captures a meeting, it'll show up here."
             }
@@ -324,7 +364,7 @@ export function MeetingsListPage() {
         </Card>
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((item, index) => (
+          {displayItems.map((item, index) => (
             <div
               key={item.sessionId}
               className="animate-fade-up"
@@ -345,7 +385,7 @@ export function MeetingsListPage() {
             <span className="text-right">When</span>
           </div>
           <ul className="divide-y divide-line">
-            {items.map((item, index) => (
+            {displayItems.map((item, index) => (
               <li
                 key={item.sessionId}
                 className="animate-fade-up"
@@ -358,8 +398,8 @@ export function MeetingsListPage() {
         </Card>
       )}
 
-      {/* Pagination */}
-      {data && data.total > 0 && totalPages > 1 && (
+      {/* Pagination — hidden in negative mode (all matches shown at once) */}
+      {!negativeOnly && data && data.total > 0 && totalPages > 1 && (
         <Pagination
           page={data.page}
           totalPages={totalPages}
@@ -435,6 +475,8 @@ function StatPill({
 
 function MeetingRow({ item }: { item: MeetingListItem }) {
   const sentiment = item.sentimentSummary?.overall;
+  const negative = isNegativeMeeting(item);
+  const critical = isCriticalNegativeMeeting(item);
   const duration =
     item.startedAt && item.endedAt
       ? Math.round(
@@ -445,7 +487,13 @@ function MeetingRow({ item }: { item: MeetingListItem }) {
   return (
     <Link
       to={`/meetings/${encodeURIComponent(item.sessionId)}`}
-      className="grid md:grid-cols-[110px_1fr_140px_120px_90px_90px] gap-3 items-center px-5 py-3.5 hover:bg-surfaceHi transition-colors focus-ring group"
+      className={`grid md:grid-cols-[110px_1fr_140px_120px_90px_90px] gap-3 items-center px-5 py-3.5 hover:bg-surfaceHi transition-colors focus-ring group ${
+        critical
+          ? "border-l-2 border-negative bg-negative/[0.04]"
+          : negative
+          ? "border-l-2 border-negative/50"
+          : ""
+      }`}
     >
       <Badge dot tone={platformTone(item.platform)} className="justify-self-start">
         {platformLabel(item.platform)}
@@ -482,6 +530,12 @@ function MeetingRow({ item }: { item: MeetingListItem }) {
               </span>
             );
           })()}
+          {critical && (
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-negative">
+              <Icon.AlertCircle size={10} />
+              Needs attention
+            </span>
+          )}
           {item.actionItems.length > 0 && (
             <span className="inline-flex items-center gap-1 text-[10.5px] text-inkMute">
               <Icon.Bolt size={10} className="text-warn" />
@@ -639,6 +693,8 @@ function GridGlyph() {
 
 function MeetingCard({ item }: { item: MeetingListItem }) {
   const sentiment = item.sentimentSummary?.overall;
+  const critical = isCriticalNegativeMeeting(item);
+  const negative = isNegativeMeeting(item);
   const duration =
     item.startedAt && item.endedAt
       ? Math.round(
@@ -667,7 +723,11 @@ function MeetingCard({ item }: { item: MeetingListItem }) {
       to={`/meetings/${encodeURIComponent(item.sessionId)}`}
       className="group block focus-ring rounded-xl"
     >
-      <Card className="overflow-hidden lift h-full flex flex-col">
+      <Card
+        className={`overflow-hidden lift h-full flex flex-col ${
+          critical ? "ring-1 ring-negative/40" : negative ? "ring-1 ring-negative/20" : ""
+        }`}
+      >
         {/* Thumbnail */}
         <div
           className="relative aspect-video overflow-hidden"

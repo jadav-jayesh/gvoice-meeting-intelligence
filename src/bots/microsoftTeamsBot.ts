@@ -23,8 +23,8 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
   async join(meetingUrl: string): Promise<Date> {
     await this.gotoMeeting(meetingUrl);
     await this.ensureTeamsLoaded(meetingUrl);
-    await this.handleTeamsWebClientEntry();
-    await this.completePreJoinDeviceFlow();
+    await this.handleTeamsWebClientEntry(meetingUrl);
+    await this.completePreJoinDeviceFlow(meetingUrl);
 
     const joinedAt = await this.waitUntilInsideMeeting("microsoft teams join", [/leave/i, /hang up/i]);
     await this.dismissTeamsDevicePermissionUi(12);
@@ -558,34 +558,50 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
   // UI appears or the small budget is spent.
   private async ensureTeamsLoaded(meetingUrl: string): Promise<void> {
     for (let attempt = 1; attempt <= 4; attempt += 1) {
-      if (!(await this.isTeamsLoadError())) return;
-      this.logger.warn({ attempt }, "teams web app failed to load — recovering (retry/reload)");
-      const clickedRetry = await this.clickRoleButton(/^retry$|^try again$/i, 1000).catch(() => false);
-      if (!clickedRetry) {
-        await this.gotoMeeting(meetingUrl).catch(() => undefined);
-      }
-      await delay(5000);
+      if (!(await this.tryRecoverTeamsLoadError(meetingUrl))) return;
     }
   }
 
-  // True when Teams is showing its own hard error screen: the failure text
-  // together with a Retry button (and no meeting/pre-join UI). Teams uses a few
-  // different wordings for the same fatal boot failure — "app failed to load",
-  // "app failed to init!" (observed in prod: session 3c2767d3, bot stuck on this
-  // screen for the whole join window), or a generic "something went wrong". Match
-  // any "app failed to <verb>" plus the known variants so recovery isn't defeated
-  // by a one-word change in Microsoft's copy.
+  // Detect Teams' fatal load/init error screen and perform ONE recovery cycle:
+  // click Teams' own "Retry" (NEVER "Clear cache and retry" — that wipes the
+  // signed-in Teams session), else reload the meeting URL. Returns true when an
+  // error was detected and a recovery was attempted, false when the page is fine.
+  // Reused by ensureTeamsLoaded AND the entry/pre-join loops so a crash that
+  // appears mid-flow (not just at first load) still recovers instead of spinning
+  // the join out to a timeout (prod: session 91344eff hit "app failed to init"
+  // during pre-join and was never retried).
+  private async tryRecoverTeamsLoadError(meetingUrl: string): Promise<boolean> {
+    if (!(await this.isTeamsLoadError())) return false;
+    this.logger.warn("teams web app failed to init/load — recovering (retry/reload)");
+    const clickedRetry =
+      (await this.clickRoleButton(/^retry$|^try again$/i, 900).catch(() => false)) ||
+      (await this.clickText(/^retry$|^try again$/i, 900).catch(() => false));
+    if (!clickedRetry) {
+      await this.gotoMeeting(meetingUrl).catch(() => undefined);
+    }
+    await delay(5000);
+    return true;
+  }
+
+  // True when Teams is showing its own hard error screen. Teams uses several
+  // wordings for the same fatal boot failure — "app failed to load", "app failed
+  // to init!" (prod: 3c2767d3, 91344eff), or a generic "something went wrong" —
+  // always alongside a Retry / "Clear cache and retry" / Reload affordance. We
+  // confirm on the error text PLUS any retry/reload affordance in the body, NOT a
+  // strict role="button" match: the screen's Retry isn't always exposed as a
+  // button role, which previously defeated detection.
   private async isTeamsLoadError(): Promise<boolean> {
     const body = await this.getPage().locator("body").innerText({ timeout: 800 }).catch(() => "");
     if (!/app failed to (?:load|init|initialize|start)|failed to load|something went wrong/i.test(body)) {
       return false;
     }
-    return this.isRoleButtonVisible(/^retry$|^try again$/i, 600);
+    return /retry|try again|reload|refresh/i.test(body) || (await this.isRoleButtonVisible(/^retry$|^try again$/i, 400));
   }
 
-  private async handleTeamsWebClientEntry(): Promise<void> {
+  private async handleTeamsWebClientEntry(meetingUrl: string): Promise<void> {
     const page = this.getPage();
     const startedAt = Date.now();
+    let sinceLoadErrorCheck = 0;
 
     while (Date.now() - startedAt < 45000) {
       await this.clickJoinButton([
@@ -604,11 +620,19 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
       const hasJoinNow = await this.isRoleButtonVisible(/join now/i, 350);
       if (hasNameInput || hasJoinNow) return;
 
+      // Recover from an "app failed to init" crash during the entry phase so we
+      // don't burn the full 45s window on a dead page before pre-join even runs.
+      sinceLoadErrorCheck += 1;
+      if (sinceLoadErrorCheck >= 8) {
+        sinceLoadErrorCheck = 0;
+        await this.tryRecoverTeamsLoadError(meetingUrl);
+      }
+
       await delay(180);
     }
   }
 
-  private async completePreJoinDeviceFlow(): Promise<void> {
+  private async completePreJoinDeviceFlow(meetingUrl: string): Promise<void> {
     const page = this.getPage();
 
     // One-shot prep: name, audio mode and mic/cam off only need to happen once
@@ -619,6 +643,9 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     await this.fillDisplayName();
     await this.selectTeamsAudioMode();
     await this.ensurePreJoinDevicesOff();
+
+    let loadErrorRecoveries = 0;
+    const MAX_LOAD_ERROR_RECOVERIES = 3;
 
     for (let attempt = 1; attempt <= 40; attempt += 1) {
       // Every few attempts re-run device prep in case the Teams pre-join UI
@@ -635,6 +662,27 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
         await delay(500);
         await this.handleNoAudioVideoPrompt();
         return;
+      }
+
+      // The Join button never appears if the Teams web app crashed to its
+      // "app failed to init" screen mid-flow. Detect that here and recover
+      // (Retry/reload) instead of spinning the whole loop out to a timeout —
+      // these boot failures are transient, so a reload usually brings the
+      // pre-join UI back. Give up with a CLEAR error only after a few tries.
+      if (attempt === 1 || attempt % 4 === 0) {
+        const recovered = await this.tryRecoverTeamsLoadError(meetingUrl);
+        if (recovered) {
+          loadErrorRecoveries += 1;
+          if (loadErrorRecoveries > MAX_LOAD_ERROR_RECOVERIES) {
+            throw new Error("Microsoft Teams web client failed to initialize (app failed to init)");
+          }
+          // Re-run entry + one-shot prep against the freshly-reloaded page.
+          await this.handleTeamsWebClientEntry(meetingUrl).catch(() => undefined);
+          await this.fillDisplayName().catch(() => undefined);
+          await this.selectTeamsAudioMode().catch(() => undefined);
+          await this.ensurePreJoinDevicesOff().catch(() => undefined);
+          continue;
+        }
       }
 
       if (attempt === 1 || attempt % 8 === 0) {

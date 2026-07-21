@@ -1347,7 +1347,32 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
   const [open, setOpen] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const safeTitle = title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
+
+  // The report is same-origin (no sandbox) so its dark-mode CSS works, but its
+  // OWN inline theme/scrollspy scripts are blocked by the app CSP. Drive the
+  // report's theme toggle + light/dark from the parent (our JS is allowed): flip
+  // `data-theme` (pure CSS) and highlight the current section on scroll — so the
+  // preview behaves exactly like the downloaded file.
+  const applyTheme = (doc: Document, theme: "light" | "dark") => {
+    doc.documentElement.setAttribute("data-theme", theme);
+  };
+  const wireReport = () => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    // Default to the report's light theme (same as a freshly-opened download);
+    // the toggle flips it.
+    if (!doc.documentElement.getAttribute("data-theme")) applyTheme(doc, "light");
+    const btn = doc.getElementById("themeToggle") as HTMLElement | null;
+    if (btn && !btn.dataset.gvWired) {
+      btn.dataset.gvWired = "1";
+      btn.addEventListener("click", () => {
+        const cur = doc.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        applyTheme(doc, cur === "dark" ? "light" : "dark");
+      });
+    }
+  };
 
   // Build the report once per open — it's the identical HTML the Download uses.
   const html = useMemo(() => (open ? buildMomHtml(meeting) : ""), [open, meeting]);
@@ -1453,8 +1478,9 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
                 </div>
               </div>
               <iframe
+                ref={iframeRef}
                 srcDoc={html}
-                sandbox="allow-scripts allow-popups allow-modals"
+                onLoad={wireReport}
                 title="Minutes of Meeting preview"
                 className={`w-full border-0 bg-white ${isFs ? "flex-1" : "h-[82vh]"}`}
               />

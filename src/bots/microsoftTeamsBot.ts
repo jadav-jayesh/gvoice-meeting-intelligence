@@ -26,7 +26,20 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     await this.handleTeamsWebClientEntry(meetingUrl);
     await this.completePreJoinDeviceFlow(meetingUrl);
 
-    const joinedAt = await this.waitUntilInsideMeeting("microsoft teams join", [/leave/i, /hang up/i]);
+    const joinedAt = await this.waitUntilInsideMeeting("microsoft teams join", [/leave/i, /hang up/i]).catch(
+      async (error) => {
+        // A timeout here usually means the bot is sitting in the Teams LOBBY that
+        // the host never opened — report that plainly instead of a vague "join
+        // timed out", so it's obvious this is an admission gate (host must admit
+        // the bot / let it bypass the lobby), not a crash.
+        if (await this.isWaitingInLobby()) {
+          throw new Error(
+            "Waiting in the Microsoft Teams lobby — the host did not admit the bot (meeting not started, or the lobby was not set to let it in)"
+          );
+        }
+        throw error;
+      }
+    );
     await this.dismissTeamsDevicePermissionUi(12);
     await this.enableCaptions();
     await this.dismissTeamsDevicePermissionUi(12);
@@ -639,6 +652,15 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
   // never Leave, so this cleanly distinguishes "admitted" from "still waiting".
   private async isAlreadyInMeeting(): Promise<boolean> {
     return this.isRoleButtonVisibleAcrossFrames(/^leave$|leave call|leave meeting|hang up/i, 250);
+  }
+
+  // True when Teams is showing its lobby / "waiting to be admitted" screen —
+  // the bot has done everything right and is waiting on the host to let it in.
+  private async isWaitingInLobby(): Promise<boolean> {
+    const body = await this.readBodyTextAcrossFrames().catch(() => "");
+    return /someone will let you in|when the meeting starts|you'?re in the lobby|wait(?:ing)? in the lobby|waiting for (?:the host|someone) to (?:admit|let you in)|admit you|meeting hasn'?t started/i.test(
+      body
+    );
   }
 
   private async completePreJoinDeviceFlow(meetingUrl: string): Promise<void> {

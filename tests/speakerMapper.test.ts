@@ -28,15 +28,16 @@ describe("mapSpeakersToParticipants — single participant", () => {
   });
 });
 
-describe("mapSpeakersToParticipants — over-diarization (clusters > participants)", () => {
+describe("mapSpeakersToParticipants — no evidence must NOT assume a name (honest default)", () => {
   const participants: Participant[] = [
     { name: "Jayesh", source: "participant_panel" },
     { name: "Pankaj", source: "participant_panel" }
   ];
 
-  it("assigns leftover clusters real names by turn order instead of 'Speaker A/B/C/D'", () => {
-    // Diariser over-segmented 2 people into 4 clusters; no usable caption
-    // evidence. Previously every cluster fell through to a generic label.
+  it("leaves over-segmented clusters as honest 'Speaker A/B/…' when no evidence links a voice to a name", () => {
+    // Diariser over-segmented into 4 clusters; no captions, no active-speaker.
+    // We genuinely don't know which voice is Jayesh vs Pankaj, so the transcript
+    // must NOT stamp real names by turn order (that guess is the wrong-speaker bug).
     const transcript = [
       seg("SPEAKER_00", "હલો", 0),
       seg("SPEAKER_01", "હેલો", 2),
@@ -46,30 +47,29 @@ describe("mapSpeakersToParticipants — over-diarization (clusters > participant
 
     const mapped = mapSpeakersToParticipants(transcript, participants, [], logger);
 
-    // No generic labels remain.
-    expect(mapped.some((s) => /^Speaker [A-Z]$/.test(s.speaker))).toBe(false);
-    expect(new Set(mapped.map((s) => s.speaker))).toEqual(new Set(["Jayesh", "Pankaj"]));
-    // Conversational turn order: appearance-ordered clusters cycle over participants.
-    expect(mapped.map((s) => s.speaker)).toEqual(["Jayesh", "Pankaj", "Jayesh", "Pankaj"]);
+    // No real participant name was assumed.
+    expect(mapped.some((s) => s.speaker === "Jayesh" || s.speaker === "Pankaj")).toBe(false);
+    // Every voice is an honest, stable Speaker label.
+    expect(mapped.every((s) => /^Speaker [A-Z]$/.test(s.speaker))).toBe(true);
     // clusterIds preserved for downstream.
     expect(mapped[2].clusterId).toBe("SPEAKER_02");
   });
 
-  it("covers an odd surplus cluster (3 clusters, 2 participants)", () => {
+  it("does not assume names for a 3-cluster / 2-participant meeting with no evidence", () => {
     const transcript = [
       seg("SPEAKER_00", "one", 0),
       seg("SPEAKER_01", "two", 2),
       seg("SPEAKER_02", "three", 4)
     ];
     const mapped = mapSpeakersToParticipants(transcript, participants, [], logger);
-    expect(mapped.some((s) => /^Speaker [A-Z]$/.test(s.speaker))).toBe(false);
-    expect(new Set(mapped.map((s) => s.speaker))).toEqual(new Set(["Jayesh", "Pankaj"]));
+    expect(mapped.some((s) => s.speaker === "Jayesh" || s.speaker === "Pankaj")).toBe(false);
+    expect(mapped.every((s) => /^Speaker [A-Z]$/.test(s.speaker))).toBe(true);
   });
 
-  it("does NOT alter the balanced case (clusters == participants still maps each 1:1)", () => {
+  it("does not assume names for the balanced 2-cluster / 2-participant case with no evidence", () => {
     const transcript = [seg("SPEAKER_00", "hi", 0), seg("SPEAKER_01", "hey", 2)];
     const mapped = mapSpeakersToParticipants(transcript, participants, [], logger);
-    expect(new Set(mapped.map((s) => s.speaker))).toEqual(new Set(["Jayesh", "Pankaj"]));
+    expect(mapped.every((s) => /^Speaker [A-Z]$/.test(s.speaker))).toBe(true);
   });
 });
 

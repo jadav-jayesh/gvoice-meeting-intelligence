@@ -230,12 +230,16 @@ export function mapSpeakersToParticipants(
       "speaker mapping: assigned last unmapped cluster to last unclaimed participant by elimination"
     );
   } else if (
+    env.SPEAKER_ASSUME_NAMES_BY_ORDER &&
     !hadCaptionEvidence &&
     unmappedClusters.length > 1 &&
     unmappedClusters.length === unclaimedParticipants.length
   ) {
     // Sub-case (2): N==N elimination when no captions were available at all
-    // (the Zoom-without-captions case).
+    // (the Zoom-without-captions case). This is a GUESS by join order, so it is
+    // opt-in via SPEAKER_ASSUME_NAMES_BY_ORDER. With the flag off (default) the
+    // leftover clusters stay unmapped and fall through to honest "Speaker A/B/C"
+    // rather than risk stamping the wrong real name on a whole voice.
     const orderedClusters = orderClustersByFirstAppearance(transcript, unmappedClusters);
     const orderedParticipants = orderParticipantsByJoinTime(unclaimedParticipants, participantsTimeline);
 
@@ -300,6 +304,10 @@ export function mapSpeakersToParticipants(
       }
       let reason = "over-diarization coverage — best per-cluster caption hint";
       if (!participant) {
+        // No caption evidence for this leftover cluster. Assigning a name here is
+        // pure turn-order guessing — only do it when explicitly opted in.
+        // Otherwise skip so the guard rail below labels it "Speaker A/B/C".
+        if (!env.SPEAKER_ASSUME_NAMES_BY_ORDER) continue;
         participant = joinOrdered[cycle % joinOrdered.length];
         cycle += 1;
         reason = "over-diarization coverage — conversational turn order";

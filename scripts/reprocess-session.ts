@@ -13,7 +13,7 @@ import { TranslationService } from "../src/ai/translationService";
 import { normalizeDiarizedTranscript } from "../src/processing/diarization";
 import { assessWhisperReliability } from "../src/processing/transcriptQuality";
 import { buildCaptionDerivedTranscript } from "../src/processing/captionTranscript";
-import { hasSpeechCaptionEvidence } from "../src/processing/captions";
+import { buildRosterNameSet, hasSpeechCaptionEvidence, isRosterNameCaption } from "../src/processing/captions";
 import { analyzeSpeech } from "../src/media/ffmpeg";
 import { mapSpeakersToParticipants } from "../src/processing/speakerMapper";
 import { SpeakerResolverService } from "../src/ai/speakerResolverService";
@@ -55,7 +55,18 @@ async function reprocess(sessionId: string, options: { dryRun: boolean; transcri
 
   const startedAt = session.startedAt ? new Date(session.startedAt) : undefined;
   const participants = session.participants ?? [];
-  const captions = session.captionsTimeline ?? [];
+  // Drop stored roster-nameplate rows (e.g. text "Krunal Panchal") that older
+  // meetings ingested as fake captions — they poison speaker mapping. Same
+  // roster-gated guard the live capture loop now applies at ingestion time.
+  const rosterNames = buildRosterNameSet(participants.map((participant) => participant.name));
+  const storedCaptions = session.captionsTimeline ?? [];
+  const captions = storedCaptions.filter((caption) => !isRosterNameCaption(caption.text, rosterNames));
+  if (captions.length < storedCaptions.length) {
+    logger.warn(
+      { sessionId, droppedNameplateCaptions: storedCaptions.length - captions.length },
+      "reprocess: dropped stored roster-nameplate captions (not speech)"
+    );
+  }
 
   logger.info(
     { sessionId, audioPath, participants: participants.map((p) => p.name), beforeSpeakers: speakerCounts(session.diarizedTranscript ?? []) },

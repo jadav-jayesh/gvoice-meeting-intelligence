@@ -215,6 +215,14 @@ const envSchema = z.object({
   SPEAKER_RESOLVER_SOFT_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   ALLOW_LOW_CONFIDENCE_DOMINANCE_MAPPING: booleanFromEnv.default(false),
 
+  // When true, voice clusters with NO verifiable evidence (no active-speaker
+  // highlight, no trustworthy captions, no official transcript) are given a real
+  // participant name by join/turn order — a guess. Default false: never assume a
+  // name. Unverifiable clusters stay honest "Speaker A/B/C" so the transcript
+  // never shows a wrong person's name as if it were confirmed. Real names still
+  // come from evidence (active-speaker overlap, caption match, Graph transcript).
+  SPEAKER_ASSUME_NAMES_BY_ORDER: booleanFromEnv.default(false),
+
   // ── Provider selection (Sarvam vs. Whisper+Pyannote) ──────────────────────
   // Top-level switch for the new provider architecture. Selection is STRICT —
   // there is NO cross-provider fallback. "auto" preserves the legacy behaviour

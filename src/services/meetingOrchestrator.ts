@@ -13,7 +13,7 @@ import {
   validatedCaptionSpeakers,
   cleanParticipantName
 } from "../processing/participants";
-import { hasSpeechCaptionEvidence } from "../processing/captions";
+import { buildRosterNameSet, hasSpeechCaptionEvidence, isRosterNameCaption } from "../processing/captions";
 import { buildCaptionDerivedTranscript } from "../processing/captionTranscript";
 import { normalizeDiarizedTranscript } from "../processing/diarization";
 import { assessWhisperReliability } from "../processing/transcriptQuality";
@@ -1684,7 +1684,24 @@ export class MeetingOrchestrator {
         logger.debug({ err: error }, "caption snapshot failed");
         return [];
       });
-      const addedCaptions = captionTracker.addMany(captionSamples);
+      // When a meeting's live captions are off, the DOM scraper can capture a
+      // roster nameplate as a caption (e.g. text "Krunal Panchal"); ingested as
+      // speech it poisons speaker attribution. Drop nameplate-shaped rows using
+      // the roster observed so far (panel names + the samples' own speaker
+      // labels). Roster-gated, so early samples before any roster is known are
+      // left untouched — deduping keeps a later drop from being defeated.
+      const rosterNames = buildRosterNameSet([
+        ...participantTracker.getParticipants().map((participant) => participant.name),
+        ...captionSamples.map((sample) => sample.speaker ?? "")
+      ]);
+      const cleanCaptionSamples = captionSamples.filter((sample) => !isRosterNameCaption(sample.text, rosterNames));
+      if (cleanCaptionSamples.length < captionSamples.length) {
+        logger.debug(
+          { droppedNameplateCaptions: captionSamples.length - cleanCaptionSamples.length },
+          "dropped roster-nameplate captions (not speech)"
+        );
+      }
+      const addedCaptions = captionTracker.addMany(cleanCaptionSamples);
       if (addedCaptions.length > 0) {
         lastCaptionActivityMs = Date.now();
         everSawCaption = true;

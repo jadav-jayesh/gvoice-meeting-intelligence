@@ -1308,30 +1308,51 @@ function DownloadVideoButton({ meeting }: { meeting: Meeting; title: string }) {
   );
 }
 
-// Preview-first Minutes-of-Meeting: opens a modal that renders the ACTUAL
-// report (the same styled HTML we download) in a sandboxed blob-URL iframe, with
-// a Download button inside. Users see it before deciding to save it.
+function FullscreenGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+// Preview-first Minutes-of-Meeting. Renders the EXACT report we download inside a
+// SANDBOXED iframe via srcDoc: the sandbox gives the document its own opaque
+// origin, so the app's `script-src 'self'` CSP does NOT apply to it and the
+// report's own JS (scrollspy, reveal animations, etc.) runs — a faithful preview
+// identical to opening the downloaded file. Plus true fullscreen + Download.
 function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string }) {
   const [open, setOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isFs, setIsFs] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const safeTitle = title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
 
-  // Render the report into a blob URL while the modal is open (CSP allows a
-  // blob: iframe). Revoke it on close so we don't leak object URLs.
+  // Build the report once per open — it's the identical HTML the Download uses.
+  const html = useMemo(() => (open ? buildMomHtml(meeting) : ""), [open, meeting]);
+
   useEffect(() => {
     if (!open) return;
-    const url = URL.createObjectURL(new Blob([buildMomHtml(meeting)], { type: "text/html;charset=utf-8" }));
-    setPreviewUrl(url);
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.fullscreenElement) setOpen(false);
+    };
+    const onFsChange = () => setIsFs(Boolean(document.fullscreenElement));
     document.addEventListener("keydown", onKey);
+    document.addEventListener("fullscreenchange", onFsChange);
     return () => {
-      URL.revokeObjectURL(url);
-      setPreviewUrl(null);
       document.body.style.overflow = "";
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("fullscreenchange", onFsChange);
     };
-  }, [open, meeting]);
+  }, [open]);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => undefined);
+    } else {
+      containerRef.current?.requestFullscreen().catch(() => undefined);
+    }
+  };
 
   const download = () => {
     const url = URL.createObjectURL(new Blob([buildMomHtml(meeting)], { type: "text/html;charset=utf-8" }));
@@ -1362,14 +1383,17 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
       {open &&
         createPortal(
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim p-3 sm:p-6"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim p-0 sm:p-6"
             onClick={() => setOpen(false)}
           >
             <div
-              className="relative flex max-h-[94vh] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
+              ref={containerRef}
+              className={`relative flex w-full flex-col overflow-hidden border border-line bg-surface shadow-2xl ${
+                isFs ? "h-screen max-w-none rounded-none" : "max-h-[94vh] max-w-[1040px] rounded-2xl"
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between gap-3 border-b border-line bg-overlay-soft px-5 py-3.5">
+              <div className="flex items-center justify-between gap-3 border-b border-line bg-overlay-soft px-5 py-3.5 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
                     <Icon.Sparkles size={16} />
@@ -1389,6 +1413,15 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
                   </button>
                   <button
                     type="button"
+                    onClick={toggleFullscreen}
+                    aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
+                    title={isFs ? "Exit fullscreen" : "Fullscreen"}
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-line text-inkMute hover:bg-line/40 hover:text-ink transition-colors focus-ring"
+                  >
+                    <FullscreenGlyph />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Close"
                     className="grid h-9 w-9 place-items-center rounded-lg border border-line text-inkMute hover:bg-line/40 hover:text-ink transition-colors focus-ring"
@@ -1397,17 +1430,12 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
                   </button>
                 </div>
               </div>
-              {previewUrl ? (
-                <iframe
-                  src={previewUrl}
-                  title="Minutes of Meeting preview"
-                  className="h-[82vh] w-full border-0 bg-white"
-                />
-              ) : (
-                <div className="grid h-[60vh] place-items-center text-inkMute">
-                  <span className="w-6 h-6 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin" />
-                </div>
-              )}
+              <iframe
+                srcDoc={html}
+                sandbox="allow-scripts allow-popups allow-modals"
+                title="Minutes of Meeting preview"
+                className={`w-full border-0 bg-white ${isFs ? "flex-1" : "h-[82vh]"}`}
+              />
             </div>
           </div>,
           document.body

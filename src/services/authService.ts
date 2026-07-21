@@ -33,8 +33,8 @@ export function verifyToken(token: string): JwtPayload {
 export function cookieOptions(): CookieOptions {
   return {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: env.COOKIE_SECURE,
+    sameSite: env.COOKIE_SECURE ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
     domain: env.COOKIE_DOMAIN || undefined
@@ -64,8 +64,8 @@ export function refreshTokenExpiry(): Date {
 export function refreshCookieOptions(): CookieOptions {
   return {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: env.COOKIE_SECURE,
+    sameSite: env.COOKIE_SECURE ? "none" : "lax",
     maxAge: env.REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
     path: "/api/auth",
     domain: env.COOKIE_DOMAIN || undefined
@@ -90,8 +90,8 @@ export function generateCsrfToken(): string {
 export function csrfCookieOptions(): CookieOptions {
   return {
     httpOnly: false, // SPA needs to read it
-    secure: true,
-    sameSite: "none",
+    secure: env.COOKIE_SECURE,
+    sameSite: env.COOKIE_SECURE ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
     domain: env.COOKIE_DOMAIN || undefined

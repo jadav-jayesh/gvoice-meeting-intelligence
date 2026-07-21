@@ -1,4 +1,4 @@
-export const botPlatforms = ["google_meet", "microsoft_teams", "zoom"] as const;
+export const botPlatforms = ["google_meet", "microsoft_teams", "zoom", "in_person"] as const;
 export type BotPlatform = (typeof botPlatforms)[number];
 
 export const botStatuses = [
@@ -298,7 +298,7 @@ export interface BotJobPayload {
   // Present for run_bot / poll_teams_transcript; absent for calendar_join
   // (the session is created when that job fires).
   sessionId?: string;
-  kind?: "run_bot" | "poll_teams_transcript" | "calendar_join";
+  kind?: "run_bot" | "poll_teams_transcript" | "calendar_join" | "process_local";
   retryCount?: number;
   calendar?: CalendarJoinPayload;
 }

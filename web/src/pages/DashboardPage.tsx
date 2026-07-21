@@ -19,7 +19,10 @@ import {
   platformLabel,
   platformTone,
   sentimentTone,
-  statusTone
+  statusTone,
+  isNegativeMeeting,
+  isCriticalNegativeMeeting,
+  byMostNegative
 } from "../lib/format";
 
 export function DashboardPage() {
@@ -45,6 +48,12 @@ export function DashboardPage() {
   }, []);
 
   const stats = useMemo(() => deriveStats(items, total), [items, total]);
+  // Negative / "needs attention" meetings — worst first — surfaced prominently
+  // so users can jump straight to the conversations that went badly.
+  const negativeMeetings = useMemo(
+    () => items.filter(isNegativeMeeting).sort(byMostNegative),
+    [items]
+  );
   const greeting = useMemo(getGreeting, []);
 
   const liveItems = items.filter((m) =>
@@ -219,6 +228,74 @@ export function DashboardPage() {
         </Card>
         </div>
       </section>
+
+      {/* Needs attention — negative / bad meetings surfaced worst-first */}
+      {!loading && negativeMeetings.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="grid h-6 w-6 place-items-center rounded-md bg-negative/10 text-negative">
+                <Icon.AlertCircle size={14} />
+              </span>
+              <SectionTitle>Needs attention</SectionTitle>
+              <Badge tone="negative" className="font-mono">
+                {negativeMeetings.length}
+              </Badge>
+            </div>
+            <Link
+              to="/meetings?flag=negative"
+              className="text-[13px] text-inkSoft hover:text-ink inline-flex items-center gap-1 group transition-colors rounded focus-ring"
+            >
+              View all
+              <Icon.ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </div>
+          <Card className="overflow-hidden border-negative/20">
+            <ul className="divide-y divide-line">
+              {negativeMeetings.slice(0, 5).map((item, index) => {
+                const overall = item.sentimentSummary?.overall;
+                const critical = isCriticalNegativeMeeting(item);
+                return (
+                  <li
+                    key={item.sessionId}
+                    className="animate-fade-up"
+                    style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                  >
+                    <Link
+                      to={`/meetings/${encodeURIComponent(item.sessionId)}`}
+                      className={`flex items-center gap-4 px-5 py-3.5 hover:bg-surfaceHi transition-colors focus-ring border-l-2 ${
+                        critical ? "border-negative bg-negative/[0.03]" : "border-negative/50"
+                      }`}
+                    >
+                      <Badge dot tone={platformTone(item.platform)}>
+                        {platformLabel(item.platform)}
+                      </Badge>
+                      <p className="flex-1 text-[13.5px] text-ink line-clamp-1 min-w-0">
+                        {item.meetingName?.trim() || item.summary?.trim() || (
+                          <span className="text-inkMute italic">Untitled meeting</span>
+                        )}
+                      </p>
+                      {critical && (
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-medium text-negative shrink-0">
+                          <Icon.AlertCircle size={10} /> Needs attention
+                        </span>
+                      )}
+                      {overall && (
+                        <Badge tone={sentimentTone(overall.label)} className="shrink-0">
+                          {overall.score.toFixed(2)}
+                        </Badge>
+                      )}
+                      <span className="hidden md:inline text-[12px] text-inkMute font-mono tabular-nums shrink-0">
+                        {formatRelative(item.endedAt ?? item.startedAt ?? item.createdAt)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        </section>
+      )}
 
       {/* Recent meetings */}
       <section>

@@ -43,6 +43,10 @@ const envSchema = z.object({
   // visits within this window.
   REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().int().positive().default(30),
   COOKIE_DOMAIN: z.string().optional(),
+  // Auth cookies are Secure + SameSite=None by default (prod/HTTPS). Set
+  // COOKIE_SECURE=false for LOCAL dev over plain http (e.g. an emulator hitting
+  // http://10.0.2.2:3001) so the session cookie will actually be set.
+  COOKIE_SECURE: booleanFromEnv.default(true),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
 
   REDIS_HOST: z.string().default("127.0.0.1"),

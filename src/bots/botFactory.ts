@@ -13,6 +13,8 @@ export function createMeetingBot(platform: BotPlatform, logger: Logger): Meeting
       return new MicrosoftTeamsBot(logger);
     case "zoom":
       return new ZoomBot(logger);
+    case "in_person":
+      throw new Error("in_person meetings are processed via processLocalUpload, not a bot");
     default:
       throw new Error(`Unsupported platform: ${platform satisfies never}`);
   }

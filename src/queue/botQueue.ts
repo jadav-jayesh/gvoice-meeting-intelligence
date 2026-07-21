@@ -45,6 +45,17 @@ function safeJobId(raw: string): string {
   return raw.replace(/:/g, "-");
 }
 
+// In-person (local) recording: the audio is already uploaded to storage by the
+// route; this job tells the worker to download it and run the same processing
+// pipeline (transcript / summary / MoM / sentiment). jobId keyed on sessionId.
+export async function enqueueLocalProcess(sessionId: string): Promise<void> {
+  await botQueue.add(
+    "process-local",
+    { sessionId, kind: "process_local" },
+    { jobId: safeJobId(`${sessionId}:process-local`) }
+  );
+}
+
 export async function enqueueTeamsTranscriptRetry(sessionId: string, retryCount: number, delayMs: number): Promise<void> {
   await botQueue.add(
     "poll-teams-transcript",

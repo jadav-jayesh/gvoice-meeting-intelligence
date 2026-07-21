@@ -75,6 +75,15 @@ export class AzureBlobStorage {
     return { blobName, url: this.blobUrl(blockBlob) };
   }
 
+  // Download a stored blob to a local file. The processing pipeline consumes
+  // local audio paths (ffmpeg/transcription), so an uploaded in-person recording
+  // must be pulled back to disk before it can be processed.
+  async downloadToFile(blobName: string, destPath: string): Promise<void> {
+    const container = this.serviceClient.getContainerClient(env.AZURE_STORAGE_CONTAINER);
+    const blockBlob = container.getBlockBlobClient(blobName);
+    await blockBlob.downloadToFile(destPath);
+  }
+
   recordingBlobName(sessionId: string): string {
     return path.posix.join(this.basePath(), "meetings", sessionId, "recordings", "recording.mp4");
   }

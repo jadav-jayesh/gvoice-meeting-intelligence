@@ -337,7 +337,9 @@ const botSessionSchema = new Schema<BotSession>(
     userId: { type: Schema.Types.ObjectId, ref: "User", index: true },
     accessUserIds: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     platform: { type: String, required: true, enum: botPlatforms },
-    meetingUrl: { type: String, required: true },
+    // Optional: in-person (local) sessions have no meeting URL. Bot platforms
+    // still require it — enforced in the bots route, not the schema.
+    meetingUrl: { type: String },
     meetingName: { type: String },
     scheduledMeetingTitle: { type: String },
     meetingPasscode: { type: String },

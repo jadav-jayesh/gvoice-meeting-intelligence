@@ -1338,14 +1338,16 @@ function FullscreenGlyph() {
   );
 }
 
-// Preview-first Minutes-of-Meeting. Renders the EXACT report we download inside a
-// SANDBOXED iframe via srcDoc: the sandbox gives the document its own opaque
-// origin, so the app's `script-src 'self'` CSP does NOT apply to it and the
-// report's own JS (scrollspy, reveal animations, etc.) runs — a faithful preview
-// identical to opening the downloaded file. Plus true fullscreen + Download.
+// Preview-first Minutes-of-Meeting. Renders the EXACT report we download in a
+// same-origin blob-URL iframe (its own base URL, so the report's tab anchors
+// scroll within it rather than navigating the parent app). The report's own
+// inline JS is CSP-blocked, so the app re-creates its two interactive bits from
+// the parent — the theme toggle and the scroll-spy — giving a preview that looks
+// AND behaves like the downloaded file. Plus true fullscreen + Download.
 function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string }) {
   const [open, setOpen] = useState(false);
   const [isFs, setIsFs] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const safeTitle = title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
@@ -1360,7 +1362,8 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
   };
   const wireReport = () => {
     const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
+    const win = iframeRef.current?.contentWindow;
+    if (!doc || !win) return;
     // Default to the report's light theme (same as a freshly-opened download);
     // the toggle flips it.
     if (!doc.documentElement.getAttribute("data-theme")) applyTheme(doc, "light");
@@ -1372,13 +1375,35 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
         applyTheme(doc, cur === "dark" ? "light" : "dark");
       });
     }
+    // Re-create the report's scrollspy (its own inline version is CSP-blocked) so
+    // the active tab tracks the scroll position, exactly like the download.
+    const links = Array.from(doc.querySelectorAll<HTMLAnchorElement>(".toc a"));
+    const items = links
+      .map((a) => ({ a, el: doc.getElementById((a.getAttribute("href") || "#").slice(1)) }))
+      .filter((x): x is { a: HTMLAnchorElement; el: HTMLElement } => Boolean(x.el));
+    if (items.length && !doc.body.dataset.gvSpy) {
+      doc.body.dataset.gvSpy = "1";
+      const update = () => {
+        const line = win.innerHeight * 0.35;
+        let cur = items[0];
+        const atBottom = win.innerHeight + win.scrollY >= doc.documentElement.scrollHeight - 4;
+        if (atBottom) cur = items[items.length - 1];
+        else items.forEach((e) => { if (e.el.getBoundingClientRect().top <= line) cur = e; });
+        links.forEach((l) => l.classList.toggle("active", l === cur.a));
+      };
+      win.addEventListener("scroll", update, { passive: true });
+      update();
+    }
   };
-
-  // Build the report once per open — it's the identical HTML the Download uses.
-  const html = useMemo(() => (open ? buildMomHtml(meeting) : ""), [open, meeting]);
 
   useEffect(() => {
     if (!open) return;
+    // Render to a blob URL: a blob iframe has its OWN document URL, so the
+    // report's in-page tab anchors (#summary …) scroll WITHIN it instead of
+    // navigating the parent app (which is framed-blocked → "refused to connect").
+    // It's still same-origin, so the parent can drive the theme + scrollspy.
+    const url = URL.createObjectURL(new Blob([buildMomHtml(meeting)], { type: "text/html;charset=utf-8" }));
+    setPreviewUrl(url);
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !document.fullscreenElement) setOpen(false);
@@ -1387,11 +1412,13 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
     document.addEventListener("keydown", onKey);
     document.addEventListener("fullscreenchange", onFsChange);
     return () => {
+      URL.revokeObjectURL(url);
+      setPreviewUrl(null);
       document.body.style.overflow = "";
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("fullscreenchange", onFsChange);
     };
-  }, [open]);
+  }, [open, meeting]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
@@ -1477,13 +1504,19 @@ function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string
                   </button>
                 </div>
               </div>
-              <iframe
-                ref={iframeRef}
-                srcDoc={html}
-                onLoad={wireReport}
-                title="Minutes of Meeting preview"
-                className={`w-full border-0 bg-white ${isFs ? "flex-1" : "h-[82vh]"}`}
-              />
+              {previewUrl ? (
+                <iframe
+                  ref={iframeRef}
+                  src={previewUrl}
+                  onLoad={wireReport}
+                  title="Minutes of Meeting preview"
+                  className={`w-full border-0 bg-white ${isFs ? "flex-1" : "h-[82vh]"}`}
+                />
+              ) : (
+                <div className={`grid w-full place-items-center bg-white ${isFs ? "flex-1" : "h-[82vh]"}`}>
+                  <span className="w-6 h-6 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin" />
+                </div>
+              )}
             </div>
           </div>,
           document.body

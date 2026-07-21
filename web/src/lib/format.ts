@@ -114,13 +114,18 @@ export function statusDotClass(status: BotStatus): string {
 interface StatusItem {
   status: BotStatus;
   errorMessage?: string | null;
+  startedAt?: string;
 }
 export function isNotAdmitted(item: StatusItem): boolean {
   if (item.status !== "failed" || !item.errorMessage) return false;
-  // The whole "bot never got INTO the meeting" family — lobby/admission gate,
-  // join timeout (usually the lobby that was never opened), never-joinable, or a
-  // pre-join hang. These are admission/entry issues, not gVoice crashes, so we
-  // show them as the softer "Not admitted" rather than a red "Failed".
+  // Only when the bot NEVER actually started recording (no startedAt). If it has
+  // a startedAt it joined and recorded, so a failure there is a genuine error
+  // (e.g. interrupted processing) — NOT an admission gate — and must stay red
+  // "Failed". This prevents mislabeling a meeting that really recorded (prod:
+  // fec6913a recorded 56 min) as "Not admitted".
+  if (item.startedAt) return false;
+  // The "bot never got INTO the meeting" family — lobby/admission gate, join
+  // timeout (the lobby that was never opened), never-joinable, or a pre-join hang.
   return /lobby|admit|join timed out|never became joinable|pre-?join flow|did not join|could ?n'?t join/i.test(
     item.errorMessage
   );

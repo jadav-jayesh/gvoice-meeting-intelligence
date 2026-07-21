@@ -618,7 +618,9 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
 
       const hasNameInput = await page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]').first().isVisible({ timeout: 350 }).catch(() => false);
       const hasJoinNow = await this.isRoleButtonVisible(/join now/i, 350);
-      if (hasNameInput || hasJoinNow) return;
+      // Auto-admit can skip the pre-join screen entirely — if we're already in,
+      // stop here so completePreJoinDeviceFlow's own in-meeting check returns.
+      if (hasNameInput || hasJoinNow || (await this.isAlreadyInMeeting())) return;
 
       // Recover from an "app failed to init" crash during the entry phase so we
       // don't burn the full 45s window on a dead page before pre-join even runs.
@@ -632,8 +634,26 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     }
   }
 
+  // True when the bot is already INSIDE the meeting — the in-meeting call
+  // controls (Leave / Hang up) are present. Pre-join screens show "Join now",
+  // never Leave, so this cleanly distinguishes "admitted" from "still waiting".
+  private async isAlreadyInMeeting(): Promise<boolean> {
+    return this.isRoleButtonVisibleAcrossFrames(/^leave$|leave call|leave meeting|hang up/i, 250);
+  }
+
   private async completePreJoinDeviceFlow(meetingUrl: string): Promise<void> {
     const page = this.getPage();
+
+    // Teams frequently AUTO-ADMITS the bot straight into the meeting — there is
+    // then no "Join now" button to click. If we're already inside (the in-meeting
+    // Leave control is present), the pre-join step is done: return instead of
+    // spinning the loop to a false "Unable to complete pre-join flow" timeout on
+    // a meeting we actually joined (prod: sessions 5c7c3570, c50703a3 — the bot
+    // was fully in-meeting, on camera-grid, yet the join was marked failed).
+    if (await this.isAlreadyInMeeting()) {
+      this.logger.info("teams: already admitted into the meeting — skipping pre-join");
+      return;
+    }
 
     // One-shot prep: name, audio mode and mic/cam off only need to happen once
     // before the Join now button is enabled. Running them on every poll iteration
@@ -648,6 +668,13 @@ export class MicrosoftTeamsBot extends BaseMeetingBot {
     const MAX_LOAD_ERROR_RECOVERIES = 3;
 
     for (let attempt = 1; attempt <= 40; attempt += 1) {
+      // Auto-admit can also land mid-loop — bail to success the moment the
+      // in-meeting controls appear.
+      if (await this.isAlreadyInMeeting()) {
+        this.logger.info({ attempt }, "teams: admitted into the meeting during pre-join");
+        return;
+      }
+
       // Every few attempts re-run device prep in case the Teams pre-join UI
       // re-renders (it sometimes resets toggles when the meeting starts).
       if (attempt > 1 && attempt % 6 === 0) {

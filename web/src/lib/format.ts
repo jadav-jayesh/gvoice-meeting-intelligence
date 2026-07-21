@@ -116,10 +116,13 @@ interface StatusItem {
   errorMessage?: string | null;
 }
 export function isNotAdmitted(item: StatusItem): boolean {
-  return (
-    item.status === "failed" &&
-    !!item.errorMessage &&
-    /lobby|did not admit|was not admitted|not admitted|didn'?t admit|admit the bot/i.test(item.errorMessage)
+  if (item.status !== "failed" || !item.errorMessage) return false;
+  // The whole "bot never got INTO the meeting" family — lobby/admission gate,
+  // join timeout (usually the lobby that was never opened), never-joinable, or a
+  // pre-join hang. These are admission/entry issues, not gVoice crashes, so we
+  // show them as the softer "Not admitted" rather than a red "Failed".
+  return /lobby|admit|join timed out|never became joinable|pre-?join flow|did not join|could ?n'?t join/i.test(
+    item.errorMessage
   );
 }
 export function displayStatusLabel(item: StatusItem): string {

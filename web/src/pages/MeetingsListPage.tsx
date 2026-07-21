@@ -27,9 +27,9 @@ import {
   platformLabel,
   platformTone,
   sentimentTone,
-  statusTone,
-  statusLabel,
-  statusDotClass,
+  displayStatusLabel,
+  displayStatusTone,
+  displayStatusDotClass,
   isMeetingInProgress,
   isMeetingStale,
   isNegativeMeeting,
@@ -571,14 +571,18 @@ function MeetingRow({ item }: { item: MeetingListItem }) {
             return (
               <span
                 className="inline-flex items-center gap-1 text-[10.5px] text-inkMute"
-                title={stale ? "No activity for hours — likely never completed" : undefined}
+                title={
+                  stale
+                    ? "No activity for hours — likely never completed"
+                    : item.errorMessage || undefined
+                }
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    stale ? "bg-inkFaint" : statusDotClass(item.status)
+                    stale ? "bg-inkFaint" : displayStatusDotClass(item)
                   }${live ? " animate-pulse" : ""}`}
                 />
-                {stale ? "Stalled" : statusLabel(item.status)}
+                {stale ? "Stalled" : displayStatusLabel(item)}
               </span>
             );
           })()}
@@ -602,9 +606,7 @@ function MeetingRow({ item }: { item: MeetingListItem }) {
             </span>
           )}
           <span className="inline-flex md:hidden items-center gap-1 text-[10.5px] text-inkMute">
-            <Badge tone={statusTone(item.status)}>
-              {item.status.replace(/_/g, " ")}
-            </Badge>
+            <Badge tone={displayStatusTone(item)}>{displayStatusLabel(item)}</Badge>
           </span>
         </div>
         </div>
@@ -823,10 +825,10 @@ function MeetingCard({ item }: { item: MeetingListItem }) {
               {platformLabel(item.platform)}
             </Badge>
             <Badge
-              tone={statusTone(item.status)}
+              tone={displayStatusTone(item)}
               className="!bg-black/55 !text-white !border-white/15 backdrop-blur-md shadow-sm"
             >
-              {isMeetingStale(item.status, item.updatedAt) ? "Stalled" : statusLabel(item.status)}
+              {isMeetingStale(item.status, item.updatedAt) ? "Stalled" : displayStatusLabel(item)}
             </Badge>
           </div>
 

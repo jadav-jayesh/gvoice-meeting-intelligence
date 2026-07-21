@@ -19,7 +19,9 @@ import {
   platformLabel,
   platformTone,
   sentimentTone,
-  statusTone
+  displayStatusLabel,
+  displayStatusTone,
+  isNotAdmitted
 } from "../lib/format";
 import { buildMomHtml } from "../lib/mom";
 
@@ -274,7 +276,7 @@ export function MeetingDetailPage() {
           <Badge dot tone={platformTone(meeting.platform)}>
             {platformLabel(meeting.platform)}
           </Badge>
-          <Badge tone={statusTone(meeting.status)}>{meeting.status.replace(/_/g, " ")}</Badge>
+          <Badge tone={displayStatusTone(meeting)}>{displayStatusLabel(meeting)}</Badge>
           {overall && (
             <Badge tone={sentimentTone(overall.label)}>
               {overall.label} · {overall.score.toFixed(2)}
@@ -399,6 +401,26 @@ export function MeetingDetailPage() {
           </div>,
           document.body
         )}
+
+      {isNotAdmitted(meeting) && (
+        <Card padded className="mb-5 border-warn/30 bg-warn/5">
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-warn/10 text-warn">
+              <Icon.AlertCircle size={18} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-semibold text-ink">The bot wasn’t admitted to this meeting</h2>
+              <p className="mt-1 text-[13px] text-inkMute leading-relaxed">
+                gVoice joined and waited in the Teams lobby, but the host didn’t let it in — so there’s no
+                recording. This isn’t a gVoice error; it’s the meeting’s lobby setting. To capture it next time, the
+                organizer can <strong className="text-ink font-medium">admit the gVoice bot</strong> from the lobby, or
+                set the meeting’s <strong className="text-ink font-medium">“Who can bypass the lobby” → “Everyone”</strong>{" "}
+                in Teams meeting options.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {inProgress && <ProcessingPanel meeting={meeting} />}
 

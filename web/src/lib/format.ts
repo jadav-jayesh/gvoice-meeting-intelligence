@@ -107,6 +107,31 @@ export function statusDotClass(status: BotStatus): string {
   }
 }
 
+// A "failed" meeting where the bot was simply never let in from the Teams lobby
+// is NOT a product error — it's an admission gate the host controls. Detect that
+// case (from the failure reason) so the UI can show a softer, honest "Not
+// admitted" state instead of a scary red "Failed".
+interface StatusItem {
+  status: BotStatus;
+  errorMessage?: string | null;
+}
+export function isNotAdmitted(item: StatusItem): boolean {
+  return (
+    item.status === "failed" &&
+    !!item.errorMessage &&
+    /lobby|did not admit|was not admitted|not admitted|didn'?t admit|admit the bot/i.test(item.errorMessage)
+  );
+}
+export function displayStatusLabel(item: StatusItem): string {
+  return isNotAdmitted(item) ? "Not admitted" : statusLabel(item.status);
+}
+export function displayStatusTone(item: StatusItem): BadgeTone {
+  return isNotAdmitted(item) ? "warn" : statusTone(item.status);
+}
+export function displayStatusDotClass(item: StatusItem): string {
+  return isNotAdmitted(item) ? "bg-warn" : statusDotClass(item.status);
+}
+
 // Statuses where the bot/pipeline is still working on the session. The detail
 // page keeps polling while the meeting is in one of these, and the download
 // actions stay hidden until the session reaches "completed".

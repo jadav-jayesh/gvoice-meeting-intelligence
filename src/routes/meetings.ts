@@ -43,6 +43,7 @@ const listProjection = {
   meetingUrl: 1,
   meetingName: 1,
   status: 1,
+  errorMessage: 1,
   participants: 1,
   summary: 1,
   transcriptionProvider: 1,

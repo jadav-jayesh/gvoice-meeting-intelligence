@@ -162,6 +162,7 @@ export interface MeetingListItem {
   meetingUrl: string;
   meetingName?: string;
   status: BotStatus;
+  errorMessage?: string;
   participants: Participant[];
   summary: string;
   transcriptionProvider?: string;

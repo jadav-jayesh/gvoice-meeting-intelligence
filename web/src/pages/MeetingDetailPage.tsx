@@ -1308,44 +1308,111 @@ function DownloadVideoButton({ meeting }: { meeting: Meeting; title: string }) {
   );
 }
 
+// Preview-first Minutes-of-Meeting: opens a modal that renders the ACTUAL
+// report (the same styled HTML we download) in a sandboxed blob-URL iframe, with
+// a Download button inside. Users see it before deciding to save it.
 function DownloadMomButton({ meeting, title }: { meeting: Meeting; title: string }) {
-  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const safeTitle = title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
 
-  const handleDownload = () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const html = buildMomHtml(meeting);
-      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const safeTitle = title.replace(/[^\w\-\s.]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safeTitle}-MOM.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Revoke a tick later so the browser has time to fire the download.
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } finally {
-      setBusy(false);
-    }
+  // Render the report into a blob URL while the modal is open (CSP allows a
+  // blob: iframe). Revoke it on close so we don't leak object URLs.
+  useEffect(() => {
+    if (!open) return;
+    const url = URL.createObjectURL(new Blob([buildMomHtml(meeting)], { type: "text/html;charset=utf-8" }));
+    setPreviewUrl(url);
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      URL.revokeObjectURL(url);
+      setPreviewUrl(null);
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, meeting]);
+
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([buildMomHtml(meeting)], { type: "text/html;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeTitle}-MOM.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleDownload}
-      disabled={busy}
-      title="Download Minutes of Meeting (HTML)"
-      aria-label="Download MOM"
-      className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-line bg-surface text-[12.5px] font-medium text-ink hover:border-lineHi hover:bg-surfaceHi transition-colors focus-ring disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-    >
-      <span className="w-5 h-5 rounded-md bg-brand-500/10 text-brand-500 flex items-center justify-center">
-        <Icon.Download size={12} />
-      </span>
-      Download MOM
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Preview Minutes of Meeting"
+        aria-label="Preview MOM"
+        className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-line bg-surface text-[12.5px] font-medium text-ink hover:border-lineHi hover:bg-surfaceHi transition-colors focus-ring shrink-0"
+      >
+        <span className="w-5 h-5 rounded-md bg-brand-500/10 text-brand-500 flex items-center justify-center">
+          <Icon.Sparkles size={12} />
+        </span>
+        View MOM
+      </button>
+
+      {open &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim p-3 sm:p-6"
+            onClick={() => setOpen(false)}
+          >
+            <div
+              className="relative flex max-h-[94vh] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-line bg-overlay-soft px-5 py-3.5">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
+                    <Icon.Sparkles size={16} />
+                  </span>
+                  <div className="leading-tight min-w-0">
+                    <p className="text-[14.5px] font-semibold text-ink">Minutes of Meeting</p>
+                    <p className="text-[11.5px] text-inkMute line-clamp-1">{title}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={download}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-500 px-4 text-[13px] font-semibold text-white hover:bg-brand-600 transition-colors focus-ring"
+                  >
+                    <Icon.Download size={14} /> Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    aria-label="Close"
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-line text-inkMute hover:bg-line/40 hover:text-ink transition-colors focus-ring"
+                  >
+                    <Icon.Close size={16} />
+                  </button>
+                </div>
+              </div>
+              {previewUrl ? (
+                <iframe
+                  src={previewUrl}
+                  title="Minutes of Meeting preview"
+                  className="h-[82vh] w-full border-0 bg-white"
+                />
+              ) : (
+                <div className="grid h-[60vh] place-items-center text-inkMute">
+                  <span className="w-6 h-6 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin" />
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 

@@ -26,7 +26,13 @@ const listQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   platform: z.enum(botPlatforms).optional(),
   status: z.enum(botStatuses).optional(),
-  search: z.string().trim().min(1).max(200).optional()
+  search: z.string().trim().min(1).max(200).optional(),
+  // Date window on createdAt (ISO strings). Both optional → open-ended range.
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  // Admin visibility toggle: "all" (every meeting) vs "mine" (owner/shared only).
+  // Ignored for non-admins — they are always scoped to their own meetings.
+  scope: z.enum(["all", "mine"]).optional()
 });
 
 // Fields returned in the list view — small enough to render hundreds of cards
@@ -76,12 +82,21 @@ meetingsRouter.use(requireAuth);
 meetingsRouter.get("/", async (req, res, next) => {
   try {
     const query = listQuerySchema.parse(req.query);
-    // Visibility = owner OR shared viewer (accessUserIds holds both) — or ALL
-    // sessions when the caller is an admin. Cosmos can still serve the sort
-    // since the createdAt index covers both the scoped and the unscoped query.
-    const filter: Record<string, unknown> = await accessClause(req.user!.id);
+    // Visibility: non-admins are always scoped to their own (owned/shared)
+    // meetings. Admins default to ALL but can opt into "mine" via ?scope=mine.
+    const admin = await isAdmin(req.user!.id);
+    const scopeMine = !admin || query.scope === "mine";
+    const filter: Record<string, unknown> = scopeMine ? { accessUserIds: req.user!.id } : {};
     if (query.platform) filter.platform = query.platform;
     if (query.status) filter.status = query.status;
+    // Date window on createdAt — narrows the same createdAt-sorted query, so it
+    // stays index-friendly.
+    if (query.from || query.to) {
+      const range: Record<string, Date> = {};
+      if (query.from) range.$gte = query.from;
+      if (query.to) range.$lte = query.to;
+      filter.createdAt = range;
+    }
     if (query.search) {
       const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const re = new RegExp(escaped, "i");

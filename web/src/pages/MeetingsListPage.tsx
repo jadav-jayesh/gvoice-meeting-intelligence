@@ -13,6 +13,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { AnimatedCounter } from "../components/ui/AnimatedCounter";
 import { Icon } from "../components/Icon";
 import { getMeetingStats, listMeetings, type MeetingStats } from "../lib/api";
+import { useAuth } from "../auth/AuthProvider";
 import type {
   BotPlatform,
   BotStatus,
@@ -52,9 +53,15 @@ const statusOptions: Array<{ value: "" | BotStatus; label: string }> = [
 ];
 
 export function MeetingsListPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [search, setSearch] = useState("");
   const [platform, setPlatform] = useState<"" | BotPlatform>("");
   const [status, setStatus] = useState<"" | BotStatus>("");
+  // Date window (YYYY-MM-DD inputs) + admin visibility scope.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [scope, setScope] = useState<"all" | "mine">("all");
   // Page lives in the URL (?page=2) so it survives reloads, back/forward and
   // bookmarks. It's derived from the query string each render; setPage writes it
   // back. Page 1 is the default and is kept out of the URL to keep links clean.
@@ -123,7 +130,11 @@ export function MeetingsListPage() {
       pageSize: negativeOnly ? 100 : 20,
       platform: platform || undefined,
       status: status || undefined,
-      search: debouncedSearch || undefined
+      search: debouncedSearch || undefined,
+      from: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
+      to: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined,
+      // Only admins can switch scope; the server ignores it for everyone else.
+      scope: isAdmin ? scope : undefined
     })
       .then((response) => !cancelled && setData(response))
       .catch((err: Error) => !cancelled && setError(err.message))
@@ -131,7 +142,7 @@ export function MeetingsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, platform, status, debouncedSearch, refreshKey, negativeOnly]);
+  }, [page, platform, status, debouncedSearch, refreshKey, negativeOnly, dateFrom, dateTo, scope, isAdmin]);
 
   const items = data?.items ?? [];
   // What actually renders: in negative mode, keep only bad meetings, worst first.
@@ -143,7 +154,7 @@ export function MeetingsListPage() {
     () => (data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1),
     [data]
   );
-  const hasActiveFilters = !!search || !!platform || !!status || negativeOnly;
+  const hasActiveFilters = !!search || !!platform || !!status || negativeOnly || !!dateFrom || !!dateTo;
 
   // Card-vs-list preference, persisted so it survives navigation away & back.
   const [view, setView] = useState<View>(() => {
@@ -289,6 +300,45 @@ export function MeetingsListPage() {
             <Icon.AlertCircle size={13} />
             Negative
           </button>
+          {isAdmin && (
+            <Segmented
+              value={scope}
+              onChange={(v) => {
+                setScope(v as "all" | "mine");
+                setPage(1);
+              }}
+              options={[
+                { value: "all", label: "All" },
+                { value: "mine", label: "My meetings" }
+              ]}
+            />
+          )}
+          <div className="flex items-center gap-1.5 h-9 px-2 rounded-lg border border-line bg-surface text-[12px] text-inkMute">
+            <Icon.Calendar size={13} className="shrink-0" />
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+              aria-label="From date"
+              className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
+            />
+            <span className="text-inkFaint">→</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+              aria-label="To date"
+              className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
+            />
+          </div>
           {hasActiveFilters && (
             <Button
               variant="ghost"
@@ -299,6 +349,8 @@ export function MeetingsListPage() {
                 setPlatform("");
                 setStatus("");
                 setNegativeOnly(false);
+                setDateFrom("");
+                setDateTo("");
                 setPage(1);
               }}
             >

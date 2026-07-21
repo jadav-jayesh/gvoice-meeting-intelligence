@@ -187,6 +187,11 @@ export interface ListMeetingsParams {
   platform?: BotPlatform;
   status?: BotStatus;
   search?: string;
+  // ISO date strings (createdAt window).
+  from?: string;
+  to?: string;
+  // Admin-only visibility toggle.
+  scope?: "all" | "mine";
 }
 
 export function listMeetings(params: ListMeetingsParams = {}): Promise<MeetingListResponse> {
@@ -196,6 +201,9 @@ export function listMeetings(params: ListMeetingsParams = {}): Promise<MeetingLi
   if (params.platform) query.set("platform", params.platform);
   if (params.status) query.set("status", params.status);
   if (params.search) query.set("search", params.search);
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  if (params.scope) query.set("scope", params.scope);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<MeetingListResponse>(`/api/meetings${suffix}`);
 }

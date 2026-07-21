@@ -7,6 +7,10 @@ import { logger } from "../utils/logger";
 
 const execFileAsync = promisify(execFile);
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class SystemAudioRecorder {
   private process?: ChildProcessByStdio<null, Readable, Readable>;
   private stderr = "";
@@ -29,15 +33,45 @@ export class SystemAudioRecorder {
     const args = this.buildArgs(source);
     logger.info({ driver: env.AUDIO_CAPTURE_DRIVER, source }, "starting system audio capture");
 
+    // A freshly created per-session null-sink's `.monitor` source isn't always
+    // readable the instant the sink loads — ffmpeg then dies at startup with
+    // "monitor: Input/output error", failing the whole meeting (observed ~6×/2d
+    // in prod, e.g. session c50703a3). Wait for the source to actually register,
+    // then retry a transient startup failure a few times before giving up.
+    if (env.AUDIO_CAPTURE_DRIVER === "pulse") {
+      await this.waitForPulseSource(source);
+    }
+
+    const MAX_ATTEMPTS = 4;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await this.spawnAndAwaitStartup(args);
+        if (attempt > 1) logger.info({ attempt }, "system audio capture started after retry");
+        return;
+      } catch (error) {
+        lastError = error;
+        this.killProcess();
+        if (attempt >= MAX_ATTEMPTS) break;
+        logger.warn({ attempt, err: error }, "system audio recorder startup failed; retrying");
+        await delay(600 * attempt);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  // Spawn ffmpeg and resolve once it has survived the startup window; reject if
+  // it errors or exits before then (so the caller can retry).
+  private spawnAndAwaitStartup(args: string[]): Promise<void> {
+    this.stderr = "";
     const child = spawn(env.FFMPEG_PATH, args, { stdio: ["ignore", "pipe", "pipe"] });
     this.process = child;
-
     child.stderr.on("data", (chunk) => {
       this.stderr += chunk.toString();
     });
     child.stdout.resume();
 
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const startupTimer = setTimeout(resolve, 1500);
       child.once("error", (error) => {
         clearTimeout(startupTimer);
@@ -48,6 +82,40 @@ export class SystemAudioRecorder {
         reject(new Error(`system audio recorder exited during startup with code ${code}: ${this.stderr}`));
       });
     });
+  }
+
+  private killProcess(): void {
+    if (this.process) {
+      try {
+        this.process.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      this.process = undefined;
+    }
+  }
+
+  // Poll until the PulseAudio source (e.g. the per-session monitor) shows up, so
+  // ffmpeg doesn't race a not-yet-registered source. Best-effort with a short
+  // bound; returns regardless so recording still attempts if pactl is unavailable.
+  private async waitForPulseSource(source: string): Promise<void> {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      try {
+        const { stdout } = await execFileAsync("pactl", ["list", "short", "sources"]);
+        const present = stdout
+          .split(/\n+/)
+          .map((line) => line.trim().split(/\s+/)[1])
+          .some((name) => name === source);
+        if (present) {
+          if (attempt > 0) logger.info({ source, attempt }, "pulse source became available");
+          return;
+        }
+      } catch {
+        return; // pactl unavailable — don't block recording
+      }
+      await delay(250);
+    }
+    logger.warn({ source }, "pulse source not visible after wait; attempting capture anyway");
   }
 
   async stop(): Promise<string | undefined> {

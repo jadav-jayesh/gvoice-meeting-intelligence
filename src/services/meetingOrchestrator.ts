@@ -22,7 +22,7 @@ import { reconcileTeamsSegments, estimateClockOffset } from "../processing/teams
 import { buildTranscriptText } from "../processing/transcriptText";
 import { validateCompletion } from "../processing/validation";
 import { MeetingRecorder } from "../media/recorder";
-import { analyzeSpeech, extractVideoThumbnail } from "../media/ffmpeg";
+import { analyzeSpeech, extractAudioForTranscription, extractVideoThumbnail, probeDurationSeconds } from "../media/ffmpeg";
 import { loadPerSessionSink, unloadSink, type PerSessionSink } from "../media/pulseSink";
 import {
   cleanupSessionBrowserProfile,
@@ -1178,6 +1178,140 @@ export class MeetingOrchestrator {
     }
   }
 
+  // In-person (local) meeting: the phone already recorded and uploaded the audio
+  // (stored as the recording blob). No bot, no join, no captions, no participant
+  // panel. We download the audio and run the SAME intelligence services the bot
+  // flow uses (transcribe → diarize → resolve → summary+sentiment → MoM), then
+  // mark the session completed. Manual participant names (if the user entered
+  // any) are carried on the session and feed speaker resolution.
+  async processLocalUpload(sessionId: string): Promise<void> {
+    await hydrateRuntimeConfig();
+    const session = await BotSessionModel.findOne({ sessionId });
+    if (!session) throw new Error(`Bot session not found: ${sessionId}`);
+    const logger = rootLogger.child({ sessionId, platform: session.platform });
+    const paths = await createSessionMediaPaths(sessionId);
+
+    try {
+      await this.updateStatus(session, "processing");
+      await this.appendLog(session, {
+        phase: "processing",
+        event: "local_processing_started",
+        message: "In-person processing started",
+        status: "processing"
+      });
+
+      // 1. Pull the uploaded recording back to local disk.
+      const storage = new AzureBlobStorage();
+      await storage.downloadToFile(storage.recordingBlobName(sessionId), paths.finalRecordingPath);
+
+      // 2. Extract a normalized audio track for the speech gate + transcription.
+      const extracted = await extractAudioForTranscription(paths.finalRecordingPath, paths.extractedAudioPath);
+      if (!extracted) throw new Error("Failed to extract audio from the uploaded recording");
+      const durationSeconds = await probeDurationSeconds(paths.finalRecordingPath).catch(() => 0);
+
+      // 3. Speech gate.
+      const speech = await analyzeSpeech(paths.extractedAudioPath);
+      const speechExists = speech.hasSpeech;
+
+      let participants: Participant[] = (session.participants ?? []).map((p) => ({ name: p.name, source: p.source, company: p.company }));
+      let diarizedTranscript: DiarizedTranscriptSegment[] = [];
+      let transcriptText = "";
+
+      // 4. Transcribe + diarize + speaker-resolve (no captions/panel/active-speaker).
+      if (speechExists) {
+        await this.appendLog(session, { phase: "transcription", event: "transcription_started", message: "Transcription started", status: "processing" });
+        const transcription = await new TranscriptionService(logger).transcribe(paths.extractedAudioPath);
+        session.transcriptionProvider = transcription.provider;
+        session.meetingLanguage = transcription.language;
+        const normalized = normalizeDiarizedTranscript(transcription.segments);
+        diarizedTranscript = mapSpeakersToParticipants(normalized, participants, [], logger, undefined, [], []);
+        diarizedTranscript = await new SpeakerResolverService(logger).resolve({
+          participants,
+          diarizedTranscript: normalized,
+          captionsTimeline: [],
+          currentTranscript: diarizedTranscript,
+          meetingStartedAt: undefined
+        });
+        transcriptText = buildTranscriptText(diarizedTranscript);
+        await this.appendLog(session, {
+          phase: "transcription",
+          event: "transcription_completed",
+          message: "Transcription completed",
+          status: "processing",
+          metadata: { provider: transcription.provider, language: transcription.language, segmentCount: diarizedTranscript.length }
+        });
+      }
+
+      // 5. Summary + per-segment sentiment (same service as the bot flow).
+      const summary = await new SummaryService(logger).summarize({ participants, transcript: diarizedTranscript, transcriptText });
+      diarizedTranscript = summary.transcriptWithSentiment;
+      const resolvedName = resolveMeetingName({ scheduledTitle: session.scheduledMeetingTitle, aiShortTitle: summary.shortTitle });
+      if (resolvedName) session.meetingName = resolvedName;
+      await this.update(session, {
+        summary: summary.summary,
+        chapters: summary.chapters,
+        actionItems: summary.actionItems,
+        ...(summary.sentimentSummary ? { sentimentSummary: summary.sentimentSummary } : {}),
+        diarizedTranscript
+      });
+
+      // 6. MoM.
+      const startedAt = session.startedAt ?? new Date();
+      const endedAt = new Date();
+      const momReport = await new MomReportService(logger).generate({
+        meetingTitle: session.meetingName?.trim() || summary.summary?.split(/[.!?]/)[0]?.trim() || session.sessionId,
+        summary: summary.summary,
+        participants,
+        transcript: diarizedTranscript,
+        transcriptText,
+        actionItems: summary.actionItems,
+        sentimentSummary: summary.sentimentSummary,
+        durationSeconds: durationSeconds || secondsBetween(startedAt, endedAt),
+        meetingDate: startedAt
+      });
+
+      const meetingLogs = await this.loadMeetingLogs(sessionId);
+      const result: MeetingIntelligenceResult = {
+        participants,
+        participantsTimeline: [],
+        captionsTimeline: [],
+        diarizedTranscript,
+        transcriptText,
+        summary: summary.summary,
+        meetingName: session.meetingName,
+        chapters: summary.chapters,
+        actionItems: summary.actionItems,
+        sentimentSummary: summary.sentimentSummary,
+        meetingLogs,
+        recordingUrl: session.recordingUrl ?? "",
+        thumbnailUrl: session.thumbnailUrl,
+        momReport,
+        startedAt,
+        endedAt
+      };
+
+      validateCompletion(result, { speechExists, captionSpeechExists: false, allowEmptyTranscript: env.ALWAYS_COMPLETE_MEETINGS });
+      await this.update(session, { ...result, status: "completed", errorMessage: undefined });
+      await this.appendLog(session, {
+        phase: "completion",
+        event: "session_completed",
+        message: "In-person meeting completed",
+        status: "completed",
+        metadata: { diarizedSegmentCount: diarizedTranscript.length, durationSeconds: durationSeconds || secondsBetween(startedAt, endedAt) }
+      });
+    } catch (error) {
+      logger.error({ err: error }, "in-person processing failed");
+      await this.update(session, { status: "failed", errorMessage: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
+      await this.appendLog(session, {
+        level: "error",
+        phase: "failure",
+        event: "local_processing_failed",
+        message: error instanceof Error ? error.message : "In-person processing failed",
+        status: "failed"
+      }).catch(() => undefined);
+    }
+  }
+
   private async prepareSessionIsolation(
     session: BotSessionDocument,
     sessionId: string
@@ -1955,6 +2089,8 @@ function resolveProfileTemplateDir(platform: BotSession["platform"]): string {
       return env.TEAMS_USER_DATA_DIR;
     case "zoom":
       return env.ZOOM_USER_DATA_DIR;
+    case "in_person":
+      throw new Error("in_person meetings have no browser profile");
     default:
       throw new Error(`Unsupported platform for profile template: ${platform satisfies never}`);
   }

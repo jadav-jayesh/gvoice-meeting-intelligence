@@ -11,6 +11,7 @@ import { authRouter } from "./routes/auth";
 import { botsRouter } from "./routes/bots";
 import { calendarRouter } from "./routes/calendar";
 import { meetingsRouter } from "./routes/meetings";
+import { localMeetingsRouter } from "./routes/localMeetings";
 import { publicRouter } from "./routes/public";
 import { insightsRouter } from "./routes/insights";
 import { adminRouter } from "./routes/admin";
@@ -84,6 +85,8 @@ export function createServer(): express.Express {
   app.use("/api/auth", authRouter);
   app.use("/bots", botsRouter);
   app.use("/api/calendar", calendarRouter);
+  // Mounted before /api/meetings so the multipart upload route resolves first.
+  app.use("/api/meetings/local", localMeetingsRouter);
   app.use("/api/meetings", meetingsRouter);
   app.use("/api/public", publicRouter);
   app.use("/api/insights", insightsRouter);

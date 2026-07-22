@@ -15,6 +15,8 @@ export function createBotWorker(): { worker: Worker<BotJobPayload>; events: Queu
         if (job.data.calendar) await runCalendarJoin(job.data.calendar);
       } else if (job.data.kind === "poll_teams_transcript") {
         if (job.data.sessionId) await orchestrator.pollMicrosoftTeamsTranscript(job.data.sessionId, job.data.retryCount ?? 0);
+      } else if (job.data.kind === "process_local") {
+        if (job.data.sessionId) await orchestrator.processLocalUpload(job.data.sessionId);
       } else if (job.data.sessionId) {
         await orchestrator.run(job.data.sessionId);
       }

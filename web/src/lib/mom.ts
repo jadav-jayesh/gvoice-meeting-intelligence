@@ -663,6 +663,8 @@ function platformLabel(platform: Meeting["platform"]): string {
       return "Microsoft Teams";
     case "zoom":
       return "Zoom";
+    case "in_person":
+      return "In person";
   }
 }
 

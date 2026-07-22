@@ -38,6 +38,8 @@ export function platformLabel(platform: BotPlatform): string {
       return "Teams";
     case "zoom":
       return "Zoom";
+    case "in_person":
+      return "In person";
   }
 }
 
@@ -51,6 +53,8 @@ export function platformTone(platform: BotPlatform): BadgeTone {
       return "info";
     case "zoom":
       return "brand";
+    case "in_person":
+      return "warn";
   }
 }
 

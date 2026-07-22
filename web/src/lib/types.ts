@@ -12,7 +12,7 @@ export interface User {
   role: UserRole;
 }
 
-export type BotPlatform = "google_meet" | "microsoft_teams" | "zoom";
+export type BotPlatform = "google_meet" | "microsoft_teams" | "zoom" | "in_person";
 
 export type BotStatus =
   | "queued"

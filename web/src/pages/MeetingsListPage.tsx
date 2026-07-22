@@ -41,7 +41,8 @@ const platformOptions: Array<{ value: "" | BotPlatform; label: string }> = [
   { value: "", label: "All" },
   { value: "google_meet", label: "Meet" },
   { value: "microsoft_teams", label: "Teams" },
-  { value: "zoom", label: "Zoom" }
+  { value: "zoom", label: "Zoom" },
+  { value: "in_person", label: "In person" }
 ];
 
 const statusOptions: Array<{ value: "" | BotStatus; label: string }> = [
@@ -793,7 +794,9 @@ function MeetingCard({ item }: { item: MeetingListItem }) {
     microsoft_teams:
       "linear-gradient(135deg, rgba(37,99,235,0.20), rgba(99,102,241,0.10) 60%, transparent)",
     zoom:
-      "linear-gradient(135deg, rgba(14,165,233,0.20), rgba(99,102,241,0.10) 60%, transparent)"
+      "linear-gradient(135deg, rgba(14,165,233,0.20), rgba(99,102,241,0.10) 60%, transparent)",
+    in_person:
+      "linear-gradient(135deg, rgba(245,158,11,0.20), rgba(234,179,8,0.10) 60%, transparent)"
   };
 
   return (

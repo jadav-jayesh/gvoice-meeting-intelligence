@@ -154,7 +154,16 @@ export function MeetingsListPage() {
     () => (data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1),
     [data]
   );
-  const hasActiveFilters = !!search || !!platform || !!status || negativeOnly || !!dateFrom || !!dateTo;
+  // Guard against a stale ?page=N in the URL that's beyond the current result
+  // set (e.g. you were on page 3, then a filter/scope change left only 1 page).
+  // Without this the API returns an out-of-range empty page and the pagination
+  // control hides itself — stranding you on a false "No meetings match".
+  useEffect(() => {
+    if (!loading && data && page > totalPages) setPage(totalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, data, page, totalPages]);
+  const hasActiveFilters =
+    !!search || !!platform || !!status || negativeOnly || !!dateFrom || !!dateTo || (isAdmin && scope === "mine");
 
   // Card-vs-list preference, persisted so it survives navigation away & back.
   const [view, setView] = useState<View>(() => {
@@ -359,6 +368,7 @@ export function MeetingsListPage() {
                   setNegativeOnly(false);
                   setDateFrom("");
                   setDateTo("");
+                  if (isAdmin) setScope("all");
                   setPage(1);
                 }}
               >
@@ -415,6 +425,11 @@ export function MeetingsListPage() {
                     setSearch("");
                     setPlatform("");
                     setStatus("");
+                    setNegativeOnly(false);
+                    setDateFrom("");
+                    setDateTo("");
+                    if (isAdmin) setScope("all");
+                    setPage(1);
                   }}
                 >
                   Reset filters

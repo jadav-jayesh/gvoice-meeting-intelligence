@@ -199,7 +199,7 @@ export function CalendarPage() {
       ) : null}
 
       {connections === null ? (
-        <div className="h-72 rounded-xl border border-line bg-surface animate-pulse" />
+        <CalendarSkeleton view={view} />
       ) : connections.connections.length === 0 ? (
         <NotConnected onConnect={connect} busy={busy} available={connections.available} />
       ) : view === "agenda" ? (
@@ -669,6 +669,68 @@ function EmptyAgenda() {
       <h2 className="mt-4 text-[15px] font-semibold text-ink">No upcoming meetings</h2>
       <p className="mx-auto mt-1.5 max-w-xs text-[13px] text-inkMute">New meetings will appear here automatically.</p>
     </Card>
+  );
+}
+
+// Mirrors the real month/week two-pane layout (same grid dimensions and the
+// 360px side panel) so first paint doesn't jump from a small box to a big one.
+function CalendarSkeleton({ view }: { view: ViewMode }) {
+  if (view === "agenda") {
+    return (
+      <div className="mx-auto w-full max-w-2xl">
+        <AgendaSkeleton />
+      </div>
+    );
+  }
+  const isWeek = view === "week";
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start" aria-hidden>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="h-5 w-40 rounded bg-surfaceHi animate-pulse" />
+          <div className="h-8 w-28 rounded-lg bg-surfaceHi animate-pulse" />
+        </div>
+        <Card className="overflow-hidden">
+          {!isWeek && (
+            <div className="grid grid-cols-7 border-b border-line">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-inkFaint">
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{d[0]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-7">
+            {Array.from({ length: isWeek ? 7 : 42 }).map((_, i) => (
+              <div
+                key={i}
+                className={`${isWeek ? "min-h-[220px]" : "min-h-[92px] sm:min-h-[124px]"} p-1.5 border-b border-r border-line ${
+                  i % 7 === 0 ? "border-l" : ""
+                }`}
+              >
+                <div className="w-6 h-6 rounded-full bg-surfaceHi animate-pulse" />
+                {i % 3 === 0 && <div className="mt-2 h-3 w-4/5 rounded bg-surfaceHi animate-pulse" />}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+      <Card className="overflow-hidden">
+        <div className="px-4 py-3.5 border-b border-line space-y-2">
+          <div className="h-3 w-14 rounded bg-surfaceHi animate-pulse" />
+          <div className="h-4 w-40 rounded bg-surfaceHi animate-pulse" />
+        </div>
+        <div className="p-3 space-y-2">
+          {[0, 1, 2].map((r) => (
+            <div key={r} className="rounded-lg border border-line p-2.5">
+              <div className="h-3.5 w-3/4 rounded bg-surfaceHi animate-pulse" />
+              <div className="mt-2 h-3 w-1/3 rounded bg-surfaceHi animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
   );
 }
 

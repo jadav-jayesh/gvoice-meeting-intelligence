@@ -39,7 +39,7 @@ export function AdminSettingsPage() {
   }, [settings]);
 
   return (
-    <div className="max-w-[900px] mx-auto px-6 lg:px-12 py-10 lg:py-14 page-enter">
+    <div className="page-shell py-10 lg:py-14 page-enter">
       <header className="mb-8 lg:mb-10">
         <p className="text-[11px] uppercase tracking-widest text-inkMute mb-2">Admin</p>
         <h1 className="text-[34px] lg:text-[40px] font-semibold tracking-tightest text-ink leading-none">Settings</h1>
@@ -55,7 +55,7 @@ export function AdminSettingsPage() {
       )}
 
       {loading ? (
-        <div className="space-y-4">
+        <div className="space-y-4 max-w-4xl">
           {Array.from({ length: 2 }).map((_, i) => (
             <Card key={i} padded>
               <Skeleton className="h-5 w-32 mb-4" />
@@ -64,7 +64,7 @@ export function AdminSettingsPage() {
           ))}
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-4xl">
           {groups.map(([group, items]) => (
             <section key={group}>
               <h2 className="text-[12px] uppercase tracking-widest text-inkMute mb-3 px-1">{group}</h2>

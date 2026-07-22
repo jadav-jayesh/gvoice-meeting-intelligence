@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { Icon } from "../Icon";
 import { BrandLogo } from "../BrandLogo";
 import { Avatar } from "../ui/Avatar";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ThemeToggle } from "../../theme/ThemeToggle";
 import { useAuth } from "../../auth/AuthProvider";
 
@@ -110,7 +111,20 @@ function MobileUserMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  async function doLogout() {
+    setLoggingOut(true);
+    try {
+      await logout();
+      navigate("/login", { replace: true });
+    } finally {
+      setLoggingOut(false);
+      setConfirmLogout(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -172,10 +186,9 @@ function MobileUserMenu() {
           <button
             type="button"
             role="menuitem"
-            onClick={async () => {
+            onClick={() => {
               setOpen(false);
-              await logout();
-              navigate("/login", { replace: true });
+              setConfirmLogout(true);
             }}
             className="w-full flex items-center gap-2.5 px-3 py-3 text-[13px] text-negative hover:bg-negative/5 focus-ring"
           >
@@ -184,6 +197,19 @@ function MobileUserMenu() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        description={<>You'll need to sign in again to access your meetings and reports.</>}
+        confirmLabel="Log out"
+        cancelLabel="Stay signed in"
+        tone="danger"
+        loading={loggingOut}
+        icon={<Icon.ArrowRight size={20} />}
+        onConfirm={doLogout}
+        onClose={() => setConfirmLogout(false)}
+      />
     </div>
   );
 }

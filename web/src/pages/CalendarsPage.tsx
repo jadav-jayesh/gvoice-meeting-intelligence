@@ -80,14 +80,10 @@ export function CalendarsPage() {
     data?.connections.find((c) => c.provider === provider);
 
   return (
-    <div className="page-enter max-w-3xl mx-auto px-5 lg:px-8 py-8 lg:py-10 space-y-6">
-      <header className="space-y-1">
-        <p className="text-[11px] uppercase tracking-widest text-inkFaint">Settings</p>
-        <h1 className="text-2xl font-semibold tracking-tighter2 text-ink">Calendars</h1>
-        <p className="text-[13.5px] text-inkMute">
-          Connect a calendar and gVoice will automatically join and record your meetings — no need to paste links.
-        </p>
-      </header>
+    <div className="space-y-4">
+      <p className="text-[13.5px] text-inkMute">
+        Connect a calendar and gVoice will automatically join and record your meetings — no need to paste links.
+      </p>
 
       {banner && (
         <div

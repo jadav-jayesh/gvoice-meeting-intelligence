@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -16,7 +15,7 @@ import {
   type UpcomingMeetingsResponse
 } from "../lib/api";
 
-type ViewMode = "month" | "agenda";
+type ViewMode = "month" | "week" | "agenda";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -41,10 +40,26 @@ export function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<CalendarProvider | null>(null);
   const [view, setView] = useState<ViewMode>("month");
-  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
-  const [modalKey, setModalKey] = useState<string | null>(null);
+  // A single cursor drives both month and week navigation; the visible range is
+  // derived from it per view. `selected` is the day whose meetings the side
+  // panel shows — it defaults to today and only moves when the user picks a day.
+  const [cursor, setCursor] = useState(() => startOfDay(new Date()));
+  const [selectedKey, setSelectedKey] = useState(() => dayKey(new Date()));
 
+  const monthDate = useMemo(() => startOfMonth(cursor), [cursor]);
   const gridDays = useMemo(() => buildMonthGrid(monthDate), [monthDate]);
+  const weekDays = useMemo(() => buildWeek(cursor), [cursor]);
+
+  // Range we fetch: the full visible span for month/week, a rolling window for
+  // agenda. Recomputed whenever the view or cursor moves.
+  const range = useMemo(() => {
+    if (view === "agenda") {
+      const now = startOfDay(new Date());
+      return { from: now, to: endOfDay(addDays(now, 45)) };
+    }
+    const days = view === "week" ? weekDays : gridDays;
+    return { from: startOfDay(days[0]), to: endOfDay(days[days.length - 1]) };
+  }, [view, gridDays, weekDays]);
 
   // Load connections with retry. `connections` stays null until this resolves,
   // so the UI shows a skeleton (never a premature "not connected") while it's
@@ -70,12 +85,12 @@ export function CalendarPage() {
   // Load events for the visible range and keep them fresh automatically: poll
   // every 30s and whenever the tab regains focus, so a newly-scheduled meeting
   // appears on its own — no page reload, no refresh button. Polls are silent
-  // (they never flash the skeleton); only month changes show the loading state.
+  // (they never flash the skeleton); only range changes show the loading state.
   useEffect(() => {
     let active = true;
     let inFlight = false;
-    const from = startOfDay(gridDays[0]).toISOString();
-    const to = endOfDay(gridDays[gridDays.length - 1]).toISOString();
+    const from = range.from.toISOString();
+    const to = range.to.toISOString();
 
     async function fetchEvents(silent: boolean) {
       if (inFlight) return;
@@ -104,7 +119,7 @@ export function CalendarPage() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [gridDays]);
+  }, [range]);
 
   async function connect(provider: CalendarProvider) {
     setBusy(provider);
@@ -119,15 +134,22 @@ export function CalendarPage() {
   const hasConnection = (connections?.connections.length ?? 0) > 0;
   const eventsByDay = useMemo(() => groupEventsByDay(data?.meetings ?? []), [data?.meetings]);
   const agendaGroups = useMemo(() => buildAgenda(data?.meetings ?? []), [data?.meetings]);
-  const modalMeetings = modalKey ? eventsByDay.get(modalKey) ?? [] : [];
+  const selectedMeetings = eventsByDay.get(selectedKey) ?? [];
   // Providers that can still be added — configured on the server but not yet
   // connected — so the user can link a second calendar without hunting for it.
   const connectableProviders = (["google", "microsoft"] as CalendarProvider[]).filter(
     (p) => connections?.available[p] && !connections.connections.some((c) => c.provider === p)
   );
 
+  const goToday = () => {
+    setCursor(startOfDay(new Date()));
+    setSelectedKey(dayKey(new Date()));
+  };
+  const step = (delta: number) =>
+    setCursor((c) => (view === "week" ? addDays(c, 7 * delta) : addMonths(startOfMonth(c), delta)));
+
   return (
-    <div className="page-enter max-w-5xl mx-auto px-5 lg:px-8 py-8 lg:py-10 space-y-6">
+    <div className="page-shell py-8 lg:py-10 page-enter space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-widest text-inkFaint">Schedule</p>
@@ -181,31 +203,54 @@ export function CalendarPage() {
       ) : connections.connections.length === 0 ? (
         <NotConnected onConnect={connect} busy={busy} available={connections.available} />
       ) : view === "agenda" ? (
-        <Agenda groups={agendaGroups} loading={loading} />
+        <div className="mx-auto w-full max-w-2xl">
+          <Agenda groups={agendaGroups} loading={loading} />
+        </div>
       ) : (
-        <div className="space-y-5">
-          <MonthToolbar
-            monthDate={monthDate}
-            onPrev={() => setMonthDate(addMonths(monthDate, -1))}
-            onNext={() => setMonthDate(addMonths(monthDate, 1))}
-            onToday={() => setMonthDate(startOfMonth(new Date()))}
-          />
-          <MonthGrid gridDays={gridDays} monthDate={monthDate} eventsByDay={eventsByDay} onOpenDay={setModalKey} loading={loading} />
-          <p className="text-[12px] text-inkFaint">Tip: click a day with meetings to see details.</p>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start">
+          <div className="space-y-4">
+            <CalendarToolbar
+              label={
+                view === "week"
+                  ? weekRangeLabel(weekDays)
+                  : monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+              }
+              onPrev={() => step(-1)}
+              onNext={() => step(1)}
+              onToday={goToday}
+            />
+            {view === "week" ? (
+              <WeekGrid
+                weekDays={weekDays}
+                eventsByDay={eventsByDay}
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                loading={loading}
+              />
+            ) : (
+              <MonthGrid
+                gridDays={gridDays}
+                monthDate={monthDate}
+                eventsByDay={eventsByDay}
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                loading={loading}
+              />
+            )}
+          </div>
+          <DayPanel dayKey={selectedKey} meetings={selectedMeetings} />
         </div>
       )}
-
-      {modalKey && <DayMeetingsModal dayKey={modalKey} meetings={modalMeetings} onClose={() => setModalKey(null)} />}
     </div>
   );
 }
 
-// ── Toolbar / segmented control ─────────────────────────────────────────────
+// ── Segmented view switch ───────────────────────────────────────────────────
 
 function Segmented({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
   return (
     <div className="inline-flex rounded-lg border border-line p-0.5 bg-surface">
-      {(["month", "agenda"] as ViewMode[]).map((mode) => (
+      {(["month", "week", "agenda"] as ViewMode[]).map((mode) => (
         <button
           key={mode}
           type="button"
@@ -221,22 +266,20 @@ function Segmented({ value, onChange }: { value: ViewMode; onChange: (v: ViewMod
   );
 }
 
-function MonthToolbar({
-  monthDate,
+function CalendarToolbar({
+  label,
   onPrev,
   onNext,
   onToday
 }: {
-  monthDate: Date;
+  label: string;
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
 }) {
   return (
     <div className="flex items-center justify-between">
-      <h2 className="text-[15px] font-semibold text-ink tracking-tight">
-        {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-      </h2>
+      <h2 className="text-[15px] font-semibold text-ink tracking-tight">{label}</h2>
       <div className="flex items-center gap-1.5">
         <Button variant="ghost" size="sm" onClick={onToday}>
           Today
@@ -244,7 +287,7 @@ function MonthToolbar({
         <button
           type="button"
           onClick={onPrev}
-          aria-label="Previous month"
+          aria-label="Previous"
           className="grid place-items-center w-8 h-8 rounded-lg border border-line text-inkSoft hover:text-ink hover-soft focus-ring transition-colors"
         >
           <Icon.ChevronLeft size={16} />
@@ -252,7 +295,7 @@ function MonthToolbar({
         <button
           type="button"
           onClick={onNext}
-          aria-label="Next month"
+          aria-label="Next"
           className="grid place-items-center w-8 h-8 rounded-lg border border-line text-inkSoft hover:text-ink hover-soft focus-ring transition-colors"
         >
           <Icon.ChevronRight size={16} />
@@ -268,18 +311,20 @@ function MonthGrid({
   gridDays,
   monthDate,
   eventsByDay,
-  onOpenDay,
+  selectedKey,
+  onSelect,
   loading
 }: {
   gridDays: Date[];
   monthDate: Date;
   eventsByDay: Map<string, UpcomingMeeting[]>;
-  onOpenDay: (key: string) => void;
+  selectedKey: string;
+  onSelect: (key: string) => void;
   loading: boolean;
 }) {
   const todayKey = dayKey(new Date());
   return (
-    <Card className={`overflow-hidden ${loading ? "opacity-60" : ""}`}>
+    <Card className={`overflow-hidden transition-opacity ${loading ? "opacity-60" : ""}`}>
       <div className="grid grid-cols-7 border-b border-line">
         {WEEKDAYS.map((day) => (
           <div key={day} className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-inkFaint">
@@ -294,30 +339,27 @@ function MonthGrid({
           const dayEvents = eventsByDay.get(key) ?? [];
           const inMonth = day.getMonth() === monthDate.getMonth();
           const isToday = key === todayKey;
-          const hasEvents = dayEvents.length > 0;
-
-          const interactive = hasEvents
-            ? {
-                role: "button" as const,
-                tabIndex: 0,
-                onClick: () => onOpenDay(key),
-                onKeyDown: (e: React.KeyboardEvent) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onOpenDay(key);
-                  }
-                },
-                "aria-label": `${dayEvents.length} meeting${dayEvents.length > 1 ? "s" : ""} on ${day.toDateString()}`
-              }
-            : {};
+          const isSelected = key === selectedKey;
 
           return (
             <div
               key={key}
-              {...interactive}
-              className={`relative min-h-[72px] sm:min-h-[104px] p-1.5 border-b border-r border-line transition-colors ${
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(key)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(key);
+                }
+              }}
+              aria-label={`${day.toDateString()}${dayEvents.length ? `, ${dayEvents.length} meeting${dayEvents.length > 1 ? "s" : ""}` : ""}`}
+              aria-pressed={isSelected}
+              className={`relative min-h-[92px] sm:min-h-[124px] p-1.5 border-b border-r border-line cursor-pointer outline-none transition-colors ${
                 index % 7 === 0 ? "border-l" : ""
-              } ${inMonth ? "bg-surface" : "bg-bg"} ${hasEvents ? "cursor-pointer hover:bg-surfaceHi focus-ring" : ""}`}
+              } ${inMonth ? "bg-surface" : "bg-bg"} ${
+                isSelected ? "ring-2 ring-inset ring-brand-500/60 bg-brand-500/[0.04]" : "hover:bg-surfaceHi focus-visible:bg-surfaceHi"
+              }`}
             >
               <span
                 className={`inline-grid place-items-center w-6 h-6 rounded-full text-[12px] tabular-nums ${
@@ -327,10 +369,12 @@ function MonthGrid({
                 {day.getDate()}
               </span>
               <div className="mt-1 space-y-0.5">
-                {dayEvents.slice(0, 3).map((meeting) => (
+                {dayEvents.slice(0, 4).map((meeting) => (
                   <DayChip key={`${meeting.source}-${meeting.id}`} meeting={meeting} />
                 ))}
-                {dayEvents.length > 3 && <span className="block px-1 text-[10.5px] text-inkMute">+{dayEvents.length - 3} more</span>}
+                {dayEvents.length > 4 && (
+                  <span className="block px-1 text-[10.5px] text-inkMute">+{dayEvents.length - 4} more</span>
+                )}
               </div>
             </div>
           );
@@ -343,7 +387,11 @@ function MonthGrid({
 function DayChip({ meeting }: { meeting: UpcomingMeeting }) {
   const tone: BadgeTone = meeting.platform ? platformTone(meeting.platform) : "neutral";
   return (
-    <span className="flex items-center gap-1 px-1 py-px rounded text-[10.5px] text-inkSoft truncate">
+    <span
+      className={`flex items-center gap-1 px-1 py-px rounded text-[10.5px] truncate ${
+        meeting.autoJoin ? "text-inkSoft" : "text-inkMute"
+      }`}
+    >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TONE_DOT[tone]}`} />
       <span className="truncate">
         <span className="hidden sm:inline tabular-nums text-inkFaint">{meeting.isAllDay ? "" : `${formatTime(meeting.startTime)} `}</span>
@@ -353,56 +401,163 @@ function DayChip({ meeting }: { meeting: UpcomingMeeting }) {
   );
 }
 
-// ── Day meetings modal ──────────────────────────────────────────────────────
+// ── Week grid ───────────────────────────────────────────────────────────────
 
-function DayMeetingsModal({ dayKey: key, meetings, onClose }: { dayKey: string; meetings: UpcomingMeeting[]; onClose: () => void }) {
-  const date = keyToDate(key);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="day-modal-title">
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-scrim animate-fade-in" />
-      <div className="relative w-full max-w-lg glass-card rounded-2xl p-6 sm:p-7 animate-fade-scale max-h-[80vh] flex flex-col">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-widest text-inkFaint">
-              {meetings.length} meeting{meetings.length > 1 ? "s" : ""}
-            </p>
-            <h2 id="day-modal-title" className="text-[18px] font-semibold tracking-tighter2 text-ink mt-1">
-              {date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-inkMute hover:text-ink hover-soft focus-ring shrink-0"
-          >
-            <Icon.Close size={14} />
-          </button>
-        </div>
-        <div className="mt-5 space-y-2 overflow-y-auto">
-          {meetings.map((meeting) => (
-            <MeetingRow key={`${meeting.source}-${meeting.id}`} meeting={meeting} />
-          ))}
-        </div>
+function WeekGrid({
+  weekDays,
+  eventsByDay,
+  selectedKey,
+  onSelect,
+  loading
+}: {
+  weekDays: Date[];
+  eventsByDay: Map<string, UpcomingMeeting[]>;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  loading: boolean;
+}) {
+  const todayKey = dayKey(new Date());
+  return (
+    <Card className={`overflow-hidden transition-opacity ${loading ? "opacity-60" : ""}`}>
+      <div className="grid grid-cols-7">
+        {weekDays.map((day, index) => {
+          const key = dayKey(day);
+          const dayEvents = eventsByDay.get(key) ?? [];
+          const isToday = key === todayKey;
+          const isSelected = key === selectedKey;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelect(key)}
+              aria-pressed={isSelected}
+              className={`flex flex-col text-left min-h-[220px] border-b border-line ${index !== 0 ? "border-l" : ""} ${
+                isSelected ? "bg-brand-500/[0.04]" : "hover:bg-surfaceHi"
+              } transition-colors focus-ring`}
+            >
+              <div className={`px-2 py-2 border-b ${isSelected ? "border-brand-500/40" : "border-line"} text-center`}>
+                <p className="text-[10.5px] uppercase tracking-wider text-inkFaint">{WEEKDAYS[day.getDay()]}</p>
+                <span
+                  className={`mt-0.5 inline-grid place-items-center w-6 h-6 rounded-full text-[12px] tabular-nums ${
+                    isToday ? "bg-brand-500 text-white font-semibold" : "text-ink"
+                  }`}
+                >
+                  {day.getDate()}
+                </span>
+              </div>
+              <div className="flex-1 p-1.5 space-y-1">
+                {dayEvents.length === 0 ? (
+                  <span className="block px-1 pt-1 text-[10.5px] text-inkFaint">—</span>
+                ) : (
+                  dayEvents.map((meeting) => {
+                    const tone: BadgeTone = meeting.platform ? platformTone(meeting.platform) : "neutral";
+                    return (
+                      <span
+                        key={`${meeting.source}-${meeting.id}`}
+                        className="block rounded-md border border-line bg-surface px-1.5 py-1 text-[10.5px] leading-tight"
+                      >
+                        <span className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TONE_DOT[tone]}`} />
+                          <span className="tabular-nums text-inkFaint">{meeting.isAllDay ? "All day" : formatTime(meeting.startTime)}</span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-inkSoft">{meeting.title}</span>
+                      </span>
+                    );
+                  })
+                )}
+              </div>
+            </button>
+          );
+        })}
       </div>
-    </div>,
-    document.body
+    </Card>
+  );
+}
+
+// ── Selected-day side panel ─────────────────────────────────────────────────
+
+function DayPanel({ dayKey: key, meetings }: { dayKey: string; meetings: UpcomingMeeting[] }) {
+  const date = keyToDate(key);
+  const isToday = key === dayKey(new Date());
+  const sorted = [...meetings].sort((a, b) => +new Date(a.startTime) - +new Date(b.startTime));
+
+  return (
+    <Card className="lg:sticky lg:top-6 overflow-hidden">
+      <div className="px-4 py-3.5 border-b border-line">
+        <p className="text-[11px] uppercase tracking-widest text-inkFaint">{isToday ? "Today" : dayLabel(date)}</p>
+        <h3 className="mt-0.5 text-[15px] font-semibold tracking-tight text-ink">
+          {date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+        </h3>
+        <p className="mt-0.5 text-[12px] text-inkMute">
+          {sorted.length === 0 ? "No meetings" : `${sorted.length} meeting${sorted.length > 1 ? "s" : ""}`}
+        </p>
+      </div>
+      <div className="p-3 max-h-[60vh] overflow-y-auto">
+        {sorted.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="mx-auto grid place-items-center w-10 h-10 rounded-xl border border-line bg-surfaceHi">
+              <Icon.Calendar size={18} className="text-inkFaint" />
+            </div>
+            <p className="mt-3 text-[12.5px] text-inkMute">Nothing scheduled.</p>
+            <p className="mt-0.5 text-[11.5px] text-inkFaint">Pick another day to see its meetings.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sorted.map((meeting) => (
+              <PanelRow key={`${meeting.source}-${meeting.id}`} meeting={meeting} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function PanelRow({ meeting }: { meeting: UpcomingMeeting }) {
+  const time = meeting.isAllDay ? "All day" : formatTime(meeting.startTime);
+  const end = meeting.isAllDay ? "" : formatTime(meeting.endTime);
+  return (
+    <div className="rounded-lg border border-line bg-surface p-2.5 hover:border-brand-500/40 transition-colors">
+      <div className="flex items-start gap-2.5">
+        {meeting.platform && PLATFORM_LOGO[meeting.platform] ? (
+          <img src={PLATFORM_LOGO[meeting.platform]} alt={platformLabel(meeting.platform)} className="mt-0.5 h-5 w-5 object-contain shrink-0" />
+        ) : (
+          <span className="mt-0.5 grid place-items-center h-5 w-5 rounded border border-line text-inkFaint shrink-0">
+            <Icon.Calendar size={11} />
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-ink leading-snug">{meeting.title}</p>
+          <p className="mt-0.5 text-[11.5px] tabular-nums text-inkMute">
+            {time}
+            {end && ` – ${end}`}
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {meeting.platform ? (
+              <Badge tone={platformTone(meeting.platform)}>{platformLabel(meeting.platform)}</Badge>
+            ) : (
+              <Badge tone="neutral">No link</Badge>
+            )}
+            {meeting.autoJoin && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-positive">
+                <Icon.Check size={11} /> Auto-join
+              </span>
+            )}
+          </div>
+        </div>
+        {meeting.joinUrl && (
+          <a
+            href={meeting.joinUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${meeting.title} link`}
+            className="mt-0.5 shrink-0 grid place-items-center w-7 h-7 rounded-md border border-line text-inkSoft hover:text-ink hover:border-brand-500/40 hover-soft focus-ring transition-colors"
+          >
+            <Icon.Video size={13} />
+          </a>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -436,11 +591,7 @@ function MeetingRow({ meeting }: { meeting: UpcomingMeeting }) {
     <Card padded className="flex items-stretch gap-4 hover:border-brand-500/40 transition-colors">
       <div className="w-[56px] shrink-0 flex flex-col items-center gap-1.5">
         {meeting.platform && PLATFORM_LOGO[meeting.platform] ? (
-          <img
-            src={PLATFORM_LOGO[meeting.platform]}
-            alt={platformLabel(meeting.platform)}
-            className="h-6 w-6 object-contain"
-          />
+          <img src={PLATFORM_LOGO[meeting.platform]} alt={platformLabel(meeting.platform)} className="h-6 w-6 object-contain" />
         ) : (
           <span className="grid place-items-center h-6 w-6 rounded-md border border-line text-inkFaint">
             <Icon.Calendar size={13} />
@@ -579,11 +730,28 @@ function buildMonthGrid(monthDate: Date): Date[] {
   return Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
 }
 
+function buildWeek(date: Date): Date[] {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
+  return Array.from({ length: 7 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+}
+
+function weekRangeLabel(week: Date[]): string {
+  const a = week[0];
+  const b = week[week.length - 1];
+  const sameMonth = a.getMonth() === b.getMonth();
+  const left = a.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const right = b.toLocaleDateString(undefined, sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" });
+  return `${left} – ${right}, ${b.getFullYear()}`;
+}
+
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 function addMonths(date: Date, delta: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+function addDays(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta);
 }
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);

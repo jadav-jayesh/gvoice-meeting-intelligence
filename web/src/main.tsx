@@ -21,6 +21,7 @@ import { SignupPage } from "./pages/SignupPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { CalendarsPage } from "./pages/CalendarsPage";
 import { CalendarPage } from "./pages/CalendarPage";
+import { SettingsLayout } from "./pages/SettingsLayout";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { SharedMeetingPage } from "./pages/SharedMeetingPage";
@@ -69,8 +70,11 @@ root.render(
               <Route path="meetings/:sessionId" element={<MeetingDetailPage />} />
               <Route path="calendar" element={<CalendarPage />} />
               <Route path="insights" element={<InsightsPage />} />
-              <Route path="settings/profile" element={<ProfilePage />} />
-              <Route path="settings/calendars" element={<CalendarsPage />} />
+              <Route path="settings" element={<SettingsLayout />}>
+                <Route index element={<Navigate to="/settings/profile" replace />} />
+                <Route path="profile" element={<ProfilePage />} />
+                <Route path="calendars" element={<CalendarsPage />} />
+              </Route>
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>

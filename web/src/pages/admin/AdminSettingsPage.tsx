@@ -55,46 +55,42 @@ export function AdminSettingsPage() {
       )}
 
       {loading ? (
-        <div className="divide-y divide-line">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="grid grid-cols-1 lg:grid-cols-[minmax(200px,1fr)_minmax(0,2.4fr)] gap-x-10 gap-y-4 py-8 first:pt-0">
-              <div>
-                <Skeleton className="h-5 w-32 mb-2" />
-                <Skeleton className="h-3 w-24" />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="p-0 overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-line bg-surfaceHi/40">
+                <Skeleton className="h-4 w-28" />
               </div>
-              <Card padded className="divide-y divide-line p-0">
+              <div className="divide-y divide-line">
                 {[0, 1].map((r) => (
                   <div key={r} className="flex items-center justify-between gap-6 px-5 py-4">
                     <div className="flex-1">
                       <Skeleton className="h-4 w-40 mb-2" />
-                      <Skeleton className="h-3 w-56" />
+                      <Skeleton className="h-3 w-52" />
                     </div>
-                    <Skeleton className="h-9 w-40" />
+                    <Skeleton className="h-9 w-32" />
                   </div>
                 ))}
-              </Card>
-            </div>
+              </div>
+            </Card>
           ))}
         </div>
       ) : (
-        <div className="divide-y divide-line">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           {groups.map(([group, items]) => (
-            <section
-              key={group}
-              className="grid grid-cols-1 lg:grid-cols-[minmax(200px,1fr)_minmax(0,2.4fr)] gap-x-10 gap-y-4 py-8 first:pt-0"
-            >
-              <div className="lg:pt-1">
-                <h2 className="text-[15px] font-semibold tracking-tight text-ink">{group}</h2>
-                <p className="text-[12.5px] text-inkMute mt-1">
+            <Card key={group} className="p-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-line bg-surfaceHi/40">
+                <h2 className="text-[13.5px] font-semibold tracking-tight text-ink">{group}</h2>
+                <span className="text-[11px] uppercase tracking-wider text-inkFaint">
                   {items.length} setting{items.length === 1 ? "" : "s"}
-                </p>
+                </span>
               </div>
-              <Card padded className="divide-y divide-line p-0">
+              <div className="divide-y divide-line">
                 {items.map((s) => (
                   <SettingRow key={s.key} setting={s} onChange={(next) => setSettings(next)} />
                 ))}
-              </Card>
-            </section>
+              </div>
+            </Card>
           ))}
         </div>
       )}
@@ -190,16 +186,16 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
     "h-9 px-3 rounded-lg border border-line bg-bg text-[13px] text-ink placeholder:text-inkMute focus-ring";
 
   return (
-    <div className="px-5 py-4 flex items-start justify-between gap-x-8 gap-y-3 flex-wrap">
-      <div className="min-w-0 flex-1 basis-64">
+    <div className="px-5 py-4 flex items-center justify-between gap-x-6 gap-y-3 flex-wrap">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[13.5px] font-medium text-ink">{setting.label}</span>
           <Badge tone={setting.source === "db" ? "brand" : "neutral"}>
             {setting.source === "db" ? "Custom" : "Default"}
           </Badge>
         </div>
-        <code className="text-[11px] text-inkFaint break-all">{setting.key}</code>
-        {setting.help && <p className="text-[12px] text-inkMute mt-1 max-w-md">{setting.help}</p>}
+        {setting.help && <p className="text-[12px] text-inkMute mt-0.5">{setting.help}</p>}
+        <code className="text-[10.5px] text-inkFaint break-all">{setting.key}</code>
       </div>
 
       <div className="flex flex-col items-end gap-2 shrink-0">

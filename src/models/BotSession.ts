@@ -104,7 +104,7 @@ export type BotSessionDocument = HydratedDocument<BotSession>;
 const participantSchema = new Schema<Participant>(
   {
     name: { type: String, required: true },
-    source: { type: String, enum: ["participant_panel", "caption_label", "diarization_cluster"] },
+    source: { type: String, enum: ["participant_panel", "caption_label", "diarization_cluster", "manual"] },
     company: { type: String }
   },
   { _id: false }

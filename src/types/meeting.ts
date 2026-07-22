@@ -16,7 +16,7 @@ export const botStatuses = [
 ] as const;
 export type BotStatus = (typeof botStatuses)[number];
 
-export type ParticipantSource = "participant_panel" | "caption_label" | "diarization_cluster";
+export type ParticipantSource = "participant_panel" | "caption_label" | "diarization_cluster" | "manual";
 
 export interface Participant {
   name: string;

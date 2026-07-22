@@ -55,27 +55,45 @@ export function AdminSettingsPage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} padded>
-              <Skeleton className="h-5 w-32 mb-2" />
-              <Skeleton className="h-3 w-40 mb-5" />
-              <Skeleton className="h-9 w-full" />
-            </Card>
+        <div className="divide-y divide-line">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="grid grid-cols-1 lg:grid-cols-[minmax(200px,1fr)_minmax(0,2.4fr)] gap-x-10 gap-y-4 py-8 first:pt-0">
+              <div>
+                <Skeleton className="h-5 w-32 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Card padded className="divide-y divide-line p-0">
+                {[0, 1].map((r) => (
+                  <div key={r} className="flex items-center justify-between gap-6 px-5 py-4">
+                    <div className="flex-1">
+                      <Skeleton className="h-4 w-40 mb-2" />
+                      <Skeleton className="h-3 w-56" />
+                    </div>
+                    <Skeleton className="h-9 w-40" />
+                  </div>
+                ))}
+              </Card>
+            </div>
           ))}
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="divide-y divide-line">
           {groups.map(([group, items]) => (
-            <section key={group}>
-              <h2 className="text-[12px] uppercase tracking-widest text-inkMute mb-3 px-1">{group}</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {items.map((s) => (
-                  <Card key={s.key} padded className="flex flex-col">
-                    <SettingRow setting={s} onChange={(next) => setSettings(next)} />
-                  </Card>
-                ))}
+            <section
+              key={group}
+              className="grid grid-cols-1 lg:grid-cols-[minmax(200px,1fr)_minmax(0,2.4fr)] gap-x-10 gap-y-4 py-8 first:pt-0"
+            >
+              <div className="lg:pt-1">
+                <h2 className="text-[15px] font-semibold tracking-tight text-ink">{group}</h2>
+                <p className="text-[12.5px] text-inkMute mt-1">
+                  {items.length} setting{items.length === 1 ? "" : "s"}
+                </p>
               </div>
+              <Card padded className="divide-y divide-line p-0">
+                {items.map((s) => (
+                  <SettingRow key={s.key} setting={s} onChange={(next) => setSettings(next)} />
+                ))}
+              </Card>
             </section>
           ))}
         </div>
@@ -172,8 +190,8 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
     "h-9 px-3 rounded-lg border border-line bg-bg text-[13px] text-ink placeholder:text-inkMute focus-ring";
 
   return (
-    <div className="flex flex-1 flex-col gap-3">
-      <div className="min-w-0">
+    <div className="px-5 py-4 flex items-start justify-between gap-x-8 gap-y-3 flex-wrap">
+      <div className="min-w-0 flex-1 basis-64">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[13.5px] font-medium text-ink">{setting.label}</span>
           <Badge tone={setting.source === "db" ? "brand" : "neutral"}>
@@ -181,13 +199,13 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
           </Badge>
         </div>
         <code className="text-[11px] text-inkFaint break-all">{setting.key}</code>
-        {setting.help && <p className="text-[12px] text-inkMute mt-1">{setting.help}</p>}
+        {setting.help && <p className="text-[12px] text-inkMute mt-1 max-w-md">{setting.help}</p>}
       </div>
 
-      <div className="mt-auto flex flex-col items-start gap-2 pt-1">
+      <div className="flex flex-col items-end gap-2 shrink-0">
           {/* Current value / control */}
           {setting.isSecret ? (
-            <div className="flex flex-col items-start gap-2 w-full">
+            <div className="flex flex-col items-end gap-2">
               <span className="text-[12.5px] text-inkSoft flex items-center gap-2">
                 {setting.isSet ? (
                   <>
@@ -214,14 +232,14 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                   </Button>
                 </div>
               ) : (
-                <div className="flex flex-col items-start gap-2 w-full">
+                <div className="flex flex-col items-end gap-2">
                   <input
                     type="password"
                     autoComplete="off"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder="New key value"
-                    className={`${inputClass} w-full max-w-72`}
+                    className={`${inputClass} w-64`}
                   />
                   <input
                     type="password"
@@ -229,7 +247,7 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Confirm your password"
-                    className={`${inputClass} w-full max-w-72`}
+                    className={`${inputClass} w-64`}
                   />
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" onClick={() => { setEditingSecret(false); setValue(""); setPassword(""); setErr(null); setTestResult(null); }}>
@@ -266,7 +284,7 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                 type={setting.type === "number" ? "number" : "text"}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                className={`${inputClass} w-44 tabular-nums`}
+                className={`${inputClass} w-44 text-right tabular-nums`}
               />
               <Button variant="primary" disabled={busy || value === (setting.value ?? "")} onClick={save}>
                 {busy ? "…" : "Save"}
@@ -285,10 +303,10 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
             </button>
           )}
           {testResult && !testResult.ok && editingSecret && (
-            <span className="text-[11.5px] max-w-72 text-left text-negative">✕ {testResult.detail}</span>
+            <span className="text-[11.5px] max-w-64 text-right text-negative">✕ {testResult.detail}</span>
           )}
           {msg && <span className="text-[11.5px] text-positive">{msg}</span>}
-          {err && <span className="text-[11.5px] text-negative max-w-64 text-left">{err}</span>}
+          {err && <span className="text-[11.5px] text-negative max-w-64 text-right">{err}</span>}
         </div>
     </div>
   );

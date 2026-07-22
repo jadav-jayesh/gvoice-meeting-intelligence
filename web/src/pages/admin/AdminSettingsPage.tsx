@@ -55,9 +55,9 @@ export function AdminSettingsPage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+        <div className="columns-1 xl:columns-2 gap-5">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="p-0 overflow-hidden">
+            <Card key={i} className="p-0 overflow-hidden mb-5 break-inside-avoid w-full">
               <div className="px-5 py-3.5 border-b border-line bg-surfaceHi/40">
                 <Skeleton className="h-4 w-28" />
               </div>
@@ -76,9 +76,9 @@ export function AdminSettingsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+        <div className="columns-1 xl:columns-2 gap-5">
           {groups.map(([group, items]) => (
-            <Card key={group} className="p-0 overflow-hidden">
+            <Card key={group} className="p-0 overflow-hidden mb-5 break-inside-avoid w-full">
               <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-line bg-surfaceHi/40">
                 <h2 className="text-[13.5px] font-semibold tracking-tight text-ink">{group}</h2>
                 <span className="text-[11px] uppercase tracking-wider text-inkFaint">

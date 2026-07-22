@@ -244,8 +244,10 @@ export function MeetingsListPage() {
 
       {/* Sticky filter bar */}
       <div className="sticky top-0 lg:top-2 z-10 mb-4">
-        <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl bg-overlay backdrop-blur-md border border-line shadow-sm">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="p-2 rounded-xl bg-overlay backdrop-blur-md border border-line shadow-sm space-y-2">
+          {/* Row 1 — search + layout toggle */}
+          <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-inkMute">
               <Icon.Search size={14} />
             </span>
@@ -270,6 +272,11 @@ export function MeetingsListPage() {
               </button>
             )}
           </div>
+          <ViewToggle value={view} onChange={setView} />
+          </div>
+
+          {/* Row 2 — filters */}
+          <div className="flex flex-wrap items-center gap-2">
           <Segmented
             value={platform}
             onChange={(v) => {
@@ -313,51 +320,53 @@ export function MeetingsListPage() {
               ]}
             />
           )}
-          <div className="flex items-center gap-1.5 h-9 px-2 rounded-lg border border-line bg-surface text-[12px] text-inkMute">
-            <Icon.Calendar size={13} className="shrink-0" />
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(1);
-              }}
-              aria-label="From date"
-              className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
-            />
-            <span className="text-inkFaint">→</span>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(1);
-              }}
-              aria-label="To date"
-              className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
-            />
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <div className="flex items-center gap-1.5 h-9 px-2 rounded-lg border border-line bg-surface text-[12px] text-inkMute">
+              <Icon.Calendar size={13} className="shrink-0" />
+              <input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+                aria-label="From date"
+                className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
+              />
+              <span className="text-inkFaint">→</span>
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+                aria-label="To date"
+                className="bg-transparent text-ink outline-none w-[112px] focus-ring rounded"
+              />
+            </div>
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Icon.Close size={12} />}
+                onClick={() => {
+                  setSearch("");
+                  setPlatform("");
+                  setStatus("");
+                  setNegativeOnly(false);
+                  setDateFrom("");
+                  setDateTo("");
+                  setPage(1);
+                }}
+              >
+                Reset
+              </Button>
+            )}
           </div>
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Icon.Close size={12} />}
-              onClick={() => {
-                setSearch("");
-                setPlatform("");
-                setStatus("");
-                setNegativeOnly(false);
-                setDateFrom("");
-                setDateTo("");
-                setPage(1);
-              }}
-            >
-              Reset
-            </Button>
-          )}
-          <ViewToggle value={view} onChange={setView} />
+          </div>
         </div>
       </div>
 

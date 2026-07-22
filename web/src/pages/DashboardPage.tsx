@@ -61,7 +61,7 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-10 lg:py-12 page-enter">
+    <div className="page-shell py-10 lg:py-12 page-enter">
       {/* Hero */}
       <header className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6 items-end mb-10">
         <div>

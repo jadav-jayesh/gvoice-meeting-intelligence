@@ -34,7 +34,7 @@ export function InsightsPage() {
   const insights = useMemo(() => deriveInsights(items), [items]);
 
   return (
-    <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-10 lg:py-14 page-enter">
+    <div className="page-shell py-10 lg:py-14 page-enter">
       <header className="mb-9">
         <p className="text-[11px] uppercase tracking-widest text-inkMute mb-2">AI</p>
         <h1 className="text-[34px] lg:text-[40px] font-semibold tracking-tightest text-ink leading-none">

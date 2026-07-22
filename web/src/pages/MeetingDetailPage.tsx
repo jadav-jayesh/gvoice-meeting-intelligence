@@ -231,7 +231,7 @@ export function MeetingDetailPage() {
   if (loading) return <DetailSkeleton />;
   if (error || !meeting) {
     return (
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-10">
+      <div className="page-shell py-10">
         <Card padded className="border-negative/30 bg-negative/5">
           <p className="text-negative dark:text-negativeHi flex items-center gap-2">
             <Icon.AlertCircle size={14} /> Failed to load meeting: {error ?? "Not found"}
@@ -254,7 +254,7 @@ export function MeetingDetailPage() {
     (meeting.summary?.trim() || meeting.sessionId).split(/[.!?]/)[0].trim();
 
   return (
-    <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-8 lg:py-10 page-enter">
+    <div className="page-shell py-8 lg:py-10 page-enter">
       <CompactHeader
         meeting={meeting}
         visible={scrolled}
@@ -558,7 +558,7 @@ function CompactHeader({
       }`}
     >
       <div className="bg-overlay backdrop-blur-md border-b border-line shadow-sm">
-        <div className="max-w-[1280px] mx-auto px-6 lg:px-12 h-12 flex items-center gap-3">
+        <div className="page-shell h-12 flex items-center gap-3">
           <Link
             to="/meetings"
             className="w-7 h-7 rounded-md flex items-center justify-center text-inkMute hover:text-ink hover:bg-surfaceHi transition-colors"
@@ -1575,7 +1575,7 @@ function uniqueSpeakers(meeting: Meeting): string[] {
 
 function DetailSkeleton() {
   return (
-    <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-10">
+    <div className="page-shell py-10">
       <Skeleton className="h-4 w-24 mb-5" />
       <Skeleton className="h-8 w-1/2 mb-2" />
       <Skeleton className="h-3 w-1/3 mb-8" />

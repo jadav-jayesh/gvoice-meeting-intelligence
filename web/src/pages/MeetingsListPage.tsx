@@ -176,7 +176,7 @@ export function MeetingsListPage() {
   const stripTotal = stats?.total ?? data?.total ?? items.length;
 
   return (
-    <div className="max-w-[1280px] mx-auto px-6 lg:px-12 py-10 lg:py-12 page-enter">
+    <div className="page-shell py-10 lg:py-12 page-enter">
       {/* Hero */}
       <header className="mb-8">
         <div className="flex items-end justify-between flex-wrap gap-4 mb-6">

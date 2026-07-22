@@ -153,6 +153,28 @@ body::after {
 }
 
 @layer utilities {
+  /* Responsive page container. Replaces the fixed narrow 1280px column so large
+     monitors use the space (up to 1760px) instead of stranding the UI in the
+     centre, while keeping comfortable, scaling side margins at every width. */
+  .page-shell {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 1440px;
+    padding-inline: 1.25rem;
+  }
+  @media (min-width: 640px) {
+    .page-shell { padding-inline: 1.5rem; }
+  }
+  @media (min-width: 1024px) {
+    .page-shell { padding-inline: 2.5rem; }
+  }
+  @media (min-width: 1280px) {
+    .page-shell { max-width: 1600px; padding-inline: 3rem; }
+  }
+  @media (min-width: 1536px) {
+    .page-shell { max-width: 1760px; padding-inline: 4rem; }
+  }
+
   .text-gradient-brand {
     background-image: linear-gradient(135deg, #06b6d4 0%, #22d3ee 50%, #0e7490 100%);
     -webkit-background-clip: text;

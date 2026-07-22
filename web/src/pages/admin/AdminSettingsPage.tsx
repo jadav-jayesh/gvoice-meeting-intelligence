@@ -55,24 +55,27 @@ export function AdminSettingsPage() {
       )}
 
       {loading ? (
-        <div className="space-y-4 max-w-4xl">
-          {Array.from({ length: 2 }).map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} padded>
-              <Skeleton className="h-5 w-32 mb-4" />
-              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-5 w-32 mb-2" />
+              <Skeleton className="h-3 w-40 mb-5" />
+              <Skeleton className="h-9 w-full" />
             </Card>
           ))}
         </div>
       ) : (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-8">
           {groups.map(([group, items]) => (
             <section key={group}>
               <h2 className="text-[12px] uppercase tracking-widest text-inkMute mb-3 px-1">{group}</h2>
-              <Card padded className="divide-y divide-line p-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {items.map((s) => (
-                  <SettingRow key={s.key} setting={s} onChange={(next) => setSettings(next)} />
+                  <Card key={s.key} padded className="flex flex-col">
+                    <SettingRow setting={s} onChange={(next) => setSettings(next)} />
+                  </Card>
                 ))}
-              </Card>
+              </div>
             </section>
           ))}
         </div>
@@ -169,23 +172,22 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
     "h-9 px-3 rounded-lg border border-line bg-bg text-[13px] text-ink placeholder:text-inkMute focus-ring";
 
   return (
-    <div className="px-5 py-4">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[13.5px] font-medium text-ink">{setting.label}</span>
-            <Badge tone={setting.source === "db" ? "brand" : "neutral"}>
-              {setting.source === "db" ? "Custom" : "Default"}
-            </Badge>
-          </div>
-          <code className="text-[11px] text-inkFaint">{setting.key}</code>
-          {setting.help && <p className="text-[12px] text-inkMute mt-1 max-w-md">{setting.help}</p>}
+    <div className="flex flex-1 flex-col gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[13.5px] font-medium text-ink">{setting.label}</span>
+          <Badge tone={setting.source === "db" ? "brand" : "neutral"}>
+            {setting.source === "db" ? "Custom" : "Default"}
+          </Badge>
         </div>
+        <code className="text-[11px] text-inkFaint break-all">{setting.key}</code>
+        {setting.help && <p className="text-[12px] text-inkMute mt-1">{setting.help}</p>}
+      </div>
 
-        <div className="flex flex-col items-end gap-2">
+      <div className="mt-auto flex flex-col items-start gap-2 pt-1">
           {/* Current value / control */}
           {setting.isSecret ? (
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-start gap-2 w-full">
               <span className="text-[12.5px] text-inkSoft flex items-center gap-2">
                 {setting.isSet ? (
                   <>
@@ -212,14 +214,14 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                   </Button>
                 </div>
               ) : (
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-start gap-2 w-full">
                   <input
                     type="password"
                     autoComplete="off"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder="New key value"
-                    className={`${inputClass} w-64`}
+                    className={`${inputClass} w-full max-w-72`}
                   />
                   <input
                     type="password"
@@ -227,7 +229,7 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Confirm your password"
-                    className={`${inputClass} w-64`}
+                    className={`${inputClass} w-full max-w-72`}
                   />
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" onClick={() => { setEditingSecret(false); setValue(""); setPassword(""); setErr(null); setTestResult(null); }}>
@@ -264,7 +266,7 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
                 type={setting.type === "number" ? "number" : "text"}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                className={`${inputClass} w-44 text-right tabular-nums`}
+                className={`${inputClass} w-44 tabular-nums`}
               />
               <Button variant="primary" disabled={busy || value === (setting.value ?? "")} onClick={save}>
                 {busy ? "…" : "Save"}
@@ -283,12 +285,11 @@ function SettingRow({ setting, onChange }: { setting: AdminSetting; onChange: (s
             </button>
           )}
           {testResult && !testResult.ok && editingSecret && (
-            <span className="text-[11.5px] max-w-64 text-right text-negative">✕ {testResult.detail}</span>
+            <span className="text-[11.5px] max-w-72 text-left text-negative">✕ {testResult.detail}</span>
           )}
           {msg && <span className="text-[11.5px] text-positive">{msg}</span>}
-          {err && <span className="text-[11.5px] text-negative max-w-64 text-right">{err}</span>}
+          {err && <span className="text-[11.5px] text-negative max-w-64 text-left">{err}</span>}
         </div>
-      </div>
     </div>
   );
 }

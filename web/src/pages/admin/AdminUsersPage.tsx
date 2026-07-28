@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -6,7 +7,9 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/Icon";
 import { useAuth } from "../../auth/AuthProvider";
-import { adminListUsers, adminSetUserRole, type AdminUser, type AdminUsersParams } from "../../lib/api";
+import { FormField } from "../../auth/FormField";
+import { PasswordRequirements } from "../../auth/PasswordRequirements";
+import { adminListUsers, adminSetUserRole, adminSetUserPassword, type AdminUser, type AdminUsersParams } from "../../lib/api";
 import type { UserRole } from "../../lib/types";
 
 const PAGE_SIZE = 20;
@@ -22,6 +25,17 @@ export function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetValue, setResetValue] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetDone, setResetDone] = useState(false);
+
+  const resetStrong = useMemo(
+    () => resetValue.length >= 8 && /[A-Z]/.test(resetValue) && /[a-z]/.test(resetValue) && /\d/.test(resetValue) && /[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]/.test(resetValue),
+    [resetValue]
+  );
 
   const load = useCallback(() => {
     setLoading(true);
@@ -54,6 +68,28 @@ export function AdminUsersPage() {
       setError(e instanceof Error ? e.message.replace(/^\d+ [^—]*— ?/, "") : "Role change failed");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  function openReset(user: AdminUser) {
+    setResetTarget(user);
+    setResetValue("");
+    setResetError(null);
+    setResetDone(false);
+    setResetting(false);
+  }
+
+  async function submitReset() {
+    if (!resetTarget || !resetStrong) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      await adminSetUserPassword(resetTarget.id, resetValue);
+      setResetDone(true);
+    } catch (e) {
+      setResetError(e instanceof Error ? e.message.replace(/^\d+ [^—]*— ?/, "") : "Couldn't reset the password.");
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -152,20 +188,31 @@ export function AdminUsersPage() {
                   </div>
                   <div className="text-right text-[13px] text-inkSoft tabular-nums">{u.meetingCount}</div>
                   <div className="text-right text-[13px] text-inkSoft tabular-nums">{u.minutes}</div>
-                  <div className="flex justify-end">
-                    <Button
-                      variant={isAdmin ? "ghost" : "secondary"}
+                  <div className="flex items-center justify-end gap-1">
+                    {!isSelf && (
+                      <button
+                        type="button"
+                        title="Reset password"
+                        onClick={() => openReset(u)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-inkMute hover:text-ink hover:bg-surfaceHi focus-ring"
+                      >
+                        <Icon.LockSparkle size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={isSelf ? "You can't change your own role" : isAdmin ? "Demote to user" : "Promote to admin"}
                       disabled={isSelf || busyId === u.id}
-                      title={isSelf ? "You can't change your own role" : undefined}
                       onClick={() => {
                         const next: UserRole = isAdmin ? "user" : "admin";
                         if (window.confirm(`${isAdmin ? "Demote" : "Promote"} ${fullName} ${isAdmin ? "to user" : "to admin"}?`)) {
                           void changeRole(u, next);
                         }
                       }}
+                      className="h-8 w-8 inline-flex items-center justify-center rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-inkMute hover:text-ink hover:bg-surfaceHi focus-ring"
                     >
-                      {busyId === u.id ? "…" : isAdmin ? "Demote" : "Make admin"}
-                    </Button>
+                      {busyId === u.id ? <span className="text-[11px]">…</span> : <Icon.User size={15} />}
+                    </button>
                   </div>
                 </li>
               );
@@ -190,6 +237,128 @@ export function AdminUsersPage() {
           </Button>
         </div>
       </div>
+
+      <ResetPasswordDialog
+        target={resetTarget}
+        value={resetValue}
+        onValueChange={setResetValue}
+        strong={resetStrong}
+        busy={resetting}
+        error={resetError}
+        done={resetDone}
+        onClose={() => setResetTarget(null)}
+        onSubmit={submitReset}
+      />
     </div>
+  );
+}
+
+function ResetPasswordDialog({
+  target,
+  value,
+  onValueChange,
+  strong,
+  busy,
+  error,
+  done,
+  onClose,
+  onSubmit
+}: {
+  target: AdminUser | null;
+  value: string;
+  onValueChange: (v: string) => void;
+  strong: boolean;
+  busy: boolean;
+  error: string | null;
+  done: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const name = target ? `${target.firstName} ${target.lastName}`.trim() || target.email : "";
+
+  useEffect(() => {
+    if (!done) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [done, onClose]);
+
+  if (!target || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => !busy && onClose()}
+        className="absolute inset-0 bg-scrim animate-fade-in"
+      />
+      <div className="relative w-full max-w-[420px] glass-card rounded-2xl p-6 animate-fade-scale">
+        {done ? (
+          <div className="space-y-5">
+            <div className="flex flex-col items-center text-center">
+              <div className="grid place-items-center w-12 h-12 rounded-2xl text-positive bg-positive/10">
+                <Icon.CheckCircle size={22} />
+              </div>
+              <h2 className="mt-4 text-[17px] font-semibold tracking-tight text-ink">Password updated</h2>
+              <p className="mt-2 text-[13px] text-inkMute leading-relaxed">
+                Password updated for <span className="font-semibold text-inkSoft">{name}</span>.
+                Share the new password with them securely — they can sign in with it right away.
+              </p>
+            </div>
+            <Button variant="primary" size="md" className="w-full" onClick={onClose}>
+              Done
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="text-center">
+              <h2 className="text-[17px] font-semibold tracking-tight text-ink">Reset password</h2>
+              <p className="mt-1.5 text-[13px] text-inkMute leading-relaxed">
+                Set a new password for <span className="font-semibold text-inkSoft">{name}</span>.
+                No email is sent — you'll need to share it with them.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <FormField
+                label="New password"
+                type="password"
+                name="newPassword"
+                autoComplete="new-password"
+                placeholder="Create a strong password"
+                value={value}
+                onChange={(e) => onValueChange(e.target.value)}
+                showPasswordToggle
+                required
+              />
+              <PasswordRequirements value={value} />
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-negative/30 bg-negative/5 px-3 py-2.5 text-[12.5px] text-negative"
+              >
+                <Icon.AlertCircle size={14} className="mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex gap-2.5">
+              <Button variant="ghost" size="md" className="flex-1" onClick={onClose} disabled={busy}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="md" className="flex-1" disabled={!strong || busy} loading={busy} onClick={onSubmit}>
+                Reset password
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }

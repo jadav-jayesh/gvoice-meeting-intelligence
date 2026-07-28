@@ -245,6 +245,13 @@ export const Icon = {
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
     </svg>
   ),
+  LockSparkle: (p: IconProps) => (
+    <svg {...base(p)}>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      <path d="M18 4l-1 2 -2 1 2 1 1 2 1 -2 2 -1 -2 -1z" />
+    </svg>
+  ),
   User: (p: IconProps) => (
     <svg {...base(p)}>
       <circle cx="12" cy="8" r="4" />

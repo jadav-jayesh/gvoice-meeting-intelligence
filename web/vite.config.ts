@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     target,
     changeOrigin: true,
     secure: true,
-    cookieDomainRewrite: ""
+    cookieDomainRewrite: "",
   };
 
   return {
@@ -27,13 +27,13 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": { ...proxyOptions },
         "/bots": { ...proxyOptions },
-        "/health": { ...proxyOptions }
-      }
+        "/health": { ...proxyOptions },
+      },
     },
     build: {
       outDir: "dist",
       sourcemap: false,
-      chunkSizeWarningLimit: 800
-    }
+      chunkSizeWarningLimit: 800,
+    },
   };
 });

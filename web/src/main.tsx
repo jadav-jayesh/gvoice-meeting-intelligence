@@ -7,7 +7,6 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
 import { RequireAdmin } from "./auth/RequireAdmin";
 import { RedirectIfAuthed } from "./auth/RedirectIfAuthed";
-import { AdminApp } from "./admin/AdminApp";
 import { AdminUsersPage } from "./pages/admin/AdminUsersPage";
 import { AdminAnalyticsPage } from "./pages/admin/AdminAnalyticsPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
@@ -50,19 +49,8 @@ root.render(
             <Route path="/signup" element={<SignupPage />} />
           </Route>
 
-          {/* Super Admin section — requires auth AND admin role, own shell */}
-          <Route element={<RequireAuth />}>
-            <Route element={<RequireAdmin />}>
-              <Route element={<AdminApp />}>
-                <Route path="admin" element={<Navigate to="/admin/analytics" replace />} />
-                <Route path="admin/users" element={<AdminUsersPage />} />
-                <Route path="admin/analytics" element={<AdminAnalyticsPage />} />
-                <Route path="admin/settings" element={<AdminSettingsPage />} />
-              </Route>
-            </Route>
-          </Route>
-
-          {/* Everything else requires auth */}
+          {/* Everything below requires auth and shares the main app shell —
+              Super Admin pages included, so the sidebar never swaps out. */}
           <Route element={<RequireAuth />}>
             <Route element={<App />}>
               <Route path="dashboard" element={<DashboardPage />} />
@@ -75,6 +63,16 @@ root.render(
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="calendars" element={<CalendarsPage />} />
               </Route>
+
+              {/* Super Admin — extra role gate beyond the sidebar's own check,
+                  so a typed-in URL still can't reach these for non-admins. */}
+              <Route element={<RequireAdmin />}>
+                <Route path="admin" element={<Navigate to="/admin/analytics" replace />} />
+                <Route path="admin/users" element={<AdminUsersPage />} />
+                <Route path="admin/analytics" element={<AdminAnalyticsPage />} />
+                <Route path="admin/settings" element={<AdminSettingsPage />} />
+              </Route>
+
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>

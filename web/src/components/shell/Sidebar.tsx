@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Link, useNavigate } from "react-router-dom";
+import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { Icon } from "../Icon";
 import { BrandLogo } from "../BrandLogo";
@@ -79,19 +79,69 @@ export function Sidebar({ onOpenPalette }: Props) {
   );
 }
 
-// Admin entry-point — only rendered for admins. Lives in its own labelled group
-// so it reads as a distinct, elevated area.
+const adminSubItems = [
+  { to: "/admin/users", label: "Users", icon: Icon.Users },
+  { to: "/admin/analytics", label: "Analytics", icon: Icon.Insights },
+  { to: "/admin/settings", label: "Settings", icon: Icon.Cog }
+];
+
+// Admin entry-point — only rendered for admins. Collapsible so its sub-pages
+// stay inline in the main sidebar instead of swapping to a separate shell.
 function AdminNavSection() {
   const { user } = useAuth();
+  const location = useLocation();
+  const onAdminRoute = location.pathname.startsWith("/admin");
+  const [open, setOpen] = useState(onAdminRoute);
+  const listRef = useRef<HTMLUListElement>(null);
+  const [listHeight, setListHeight] = useState(0);
+
+  // Auto-expand if a direct link lands on an admin page (e.g. bookmark/refresh).
+  useEffect(() => {
+    if (onAdminRoute) setOpen(true);
+  }, [onAdminRoute]);
+
+  // Measure real content height so max-height can animate to an exact value
+  // instead of a guessed cap (which either clips or leaves dead easing time).
+  useEffect(() => {
+    if (listRef.current) setListHeight(listRef.current.scrollHeight);
+  }, []);
+
   if (user?.role !== "admin") return null;
+
   return (
     <>
       <p className="px-2 mt-5 mb-1.5 text-[10px] uppercase tracking-widest text-inkFaint">Admin</p>
-      <ul className="space-y-0.5">
-        <li>
-          <NavItemLink to="/admin" label="Super Admin" icon={Icon.Users} />
-        </li>
-      </ul>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={clsx(
+          "w-full group relative flex items-center gap-2.5 h-9 px-2.5 rounded-md text-[13px] transition-colors focus-ring",
+          onAdminRoute ? "text-ink bg-surfaceHi" : "text-inkSoft hover:text-ink hover-soft"
+        )}
+      >
+        <Icon.Sparkles size={15} className={onAdminRoute ? "text-brand-500 dark:text-brand-400" : ""} />
+        <span>Super Admin</span>
+        <Icon.ChevronDown
+          size={14}
+          className={clsx("ml-auto text-inkMute transition-transform", open && "rotate-180")}
+        />
+      </button>
+      <div
+        style={{ maxHeight: open ? listHeight : 0 }}
+        className={clsx(
+          "overflow-hidden transition-[max-height] duration-200 ease-out motion-reduce:transition-none",
+          open && "mt-0.5"
+        )}
+      >
+        <ul ref={listRef} className="space-y-0.5 pl-3">
+          {adminSubItems.map((item) => (
+            <li key={item.to}>
+              <NavItemLink {...item} />
+            </li>
+          ))}
+        </ul>
+      </div>
     </>
   );
 }

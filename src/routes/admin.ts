@@ -6,9 +6,22 @@ import { BotSessionModel } from "../models/BotSession";
 import { requireAuth } from "../middleware/requireAuth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requireCsrf } from "../middleware/requireCsrf";
+import { hashPassword } from "../services/authService";
 import { logger } from "../utils/logger";
 
 export const adminRouter = Router();
+
+// Same strength rules as signup / change-password (kept in sync manually).
+const strongPassword = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(128, "Password is too long")
+  .refine((v) => /[A-Z]/.test(v), "Password must include an uppercase letter")
+  .refine((v) => /[a-z]/.test(v), "Password must include a lowercase letter")
+  .refine((v) => /\d/.test(v), "Password must include a number")
+  .refine((v) => /[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]/.test(v), "Password must include a special character");
+
+const setPasswordSchema = z.object({ newPassword: strongPassword });
 
 // Every admin route requires a logged-in user whose DB role is "admin".
 adminRouter.use(requireAuth, requireAdmin);
@@ -186,6 +199,39 @@ adminRouter.patch("/users/:id/role", requireCsrf, async (req, res, next) => {
     );
 
     res.json({ user: { id: String(target._id), email: target.email, role: target.role } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /api/admin/users/:id/password — an admin sets a new password for a
+// locked-out user. Admins can't reset their OWN password here (they must use
+// change-password, which verifies the current one). No email is sent; the
+// admin communicates the new password out-of-band.
+adminRouter.patch("/users/:id/password", requireCsrf, async (req, res, next) => {
+  try {
+    const { newPassword } = setPasswordSchema.parse(req.body);
+    const targetId = String(req.params.id);
+    if (!Types.ObjectId.isValid(targetId)) {
+      res.status(400).json({ error: "invalid user id" });
+      return;
+    }
+    if (targetId === req.user!.id) {
+      res.status(400).json({ error: "Use change password for your own account" });
+      return;
+    }
+
+    const target = await UserModel.findById(targetId);
+    if (!target) {
+      res.status(404).json({ error: "user not found" });
+      return;
+    }
+
+    target.passwordHash = await hashPassword(newPassword);
+    await target.save();
+    logger.info({ actorId: req.user!.id, targetId }, "admin reset user password");
+
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
